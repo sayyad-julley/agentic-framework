@@ -1,0 +1,10 @@
+{
+  "query": "JavaScript map vs forEach",
+  "result": {
+    "success": false,
+    "message": "Error querying documentation service",
+    "data": null,
+    "error": "getaddrinfo ENOTFOUND api.context7.ai"
+  },
+  "timestamp": "2025-11-13T11:15:40.547Z"
+}

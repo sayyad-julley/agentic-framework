@@ -1,0 +1,32 @@
+{
+  "name": "context7-cursor-integration",
+  "version": "1.0.0",
+  "description": "Context7 integration for Cursor to fetch relevant documentation based on user queries",
+  "main": "cursor-handler.js",
+  "scripts": {
+    "test": "node test/test.js",
+    "health-check": "node -e \"const CursorHandler = require('./cursor-handler'); const handler = new CursorHandler(); handler.healthCheck().then(console.log);\"",
+    "clear-cache": "node -e \"const CursorHandler = require('./cursor-handler'); const handler = new CursorHandler(); handler.clearCache().then(console.log);\"",
+    "stats": "node -e \"const CursorHandler = require('./cursor-handler'); const handler = new CursorHandler(); console.log(JSON.stringify(handler.getStats(), null, 2));\"",
+    "demo": "node main-cursor-integration.js",
+    "mcp-examples": "node mcp-usage-example.js",
+    "cli": "node cli.js"
+  },
+  "keywords": [
+    "context7",
+    "cursor",
+    "documentation",
+    "mcp",
+    "search"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {},
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "."
+  }
+}

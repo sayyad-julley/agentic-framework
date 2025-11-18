@@ -1,0 +1,557 @@
+# Cursor Rules for Optimal Prompt Engineering Agent Framework
+
+## Framework Overview
+
+This is a pure markdown-based agent/sub-agent framework located in `agent-framework/`. All agents, sub-agents, patterns, and skills are defined in markdown files with YAML frontmatter. The LLM reads these files directly and executes based on markdown instructions.
+
+## Agent Discovery Process
+
+### Phase 0: Mandatory Agent Loading (MUST HAPPEN FIRST)
+
+**CRITICAL**: This phase is MANDATORY and must happen BEFORE processing any user query. Do NOT skip this phase.
+
+For EVERY user query, BEFORE you begin processing, you MUST:
+
+1. **Load Agent Registry** (PRIMARY METHOD):
+   - Read `agent-framework/AGENT_REGISTRY.md` first
+   - This file contains consolidated metadata for ALL agents
+   - It provides quick reference for agent capabilities, triggers, and keywords
+   - Extract all agent IDs, names, descriptions, triggers, and semantic keywords
+   - Keep this registry in your working memory throughout query processing
+
+2. **Alternative Method** (if registry doesn't exist):
+   - List the `agent-framework/agents/` directory
+   - For each agent directory, read `agent.md` file
+   - Extract YAML frontmatter metadata from each agent
+   - Build complete agent list in memory
+
+3. **Verify Agent Availability**:
+   - Ensure you have loaded metadata for ALL available agents:
+     - `hydration-agent`
+     - `performance-agent`
+     - `dependency-agent`
+   - Verify you have: triggers, semanticKeywords, semanticDescription, capabilities for each
+
+4. **Maintain Agent Context**:
+   - Keep all agent metadata in your working memory
+   - Do NOT discard agent information after loading
+   - Agents should remain available throughout the entire query processing
+
+**This phase ensures all agents are available for matching BEFORE you analyze the query.**
+
+### Step 1: Discover Available Agents
+
+**NOTE**: If you completed Phase 0, you already have agent metadata loaded. Skip to Step 2.
+
+If Phase 0 was not completed, you MUST:
+
+1. **Scan for Agents**: List the `agent-framework/agents/` directory
+2. **Read Agent Files**: For each agent directory, read `agent.md` file
+3. **Extract Metadata**: Parse YAML frontmatter to get:
+   - `id`, `name`, `description`
+   - `triggers`, `semanticKeywords`
+   - `semanticDescription`
+   - `context7` configuration
+4. **Build Agent List**: Keep list of available agents in memory
+
+### Step 2: Semantic Query Matching
+
+1. **Analyze Query**: Extract intent, keywords, and context from user query
+2. **Extract Keywords**: 
+   - Remove stop words (the, a, an, how, what, etc.)
+   - Extract technical terms, library names, concepts
+   - Identify multi-word phrases
+   - Prioritize longer, more specific terms
+3. **Match to Agents**: Compare query against agent metadata:
+   - Check if query keywords match `triggers` or `semanticKeywords`
+   - Compare query intent with `semanticDescription`
+   - Rank agents by relevance
+4. **Select Agent**: Choose most relevant agent(s) based on semantic understanding
+
+### Step 3: Sub-Agent Discovery
+
+Once an agent is selected:
+
+1. **Read Sub-Agents**: List `agents/[agent-name]/sub-agents/` directory
+2. **Read Sub-Agent Files**: Read all `.md` files in sub-agents directory
+3. **Extract Metadata**: Parse YAML frontmatter for each sub-agent:
+   - `id`, `name`, `description`
+   - `semanticKeywords`, `semanticDescription`
+   - `instructionExamples`
+   - `detectionRule`
+   - `context7` configuration
+4. **Read Patterns**: Read `anti-patterns/definitions.md` to understand patterns
+
+### Step 4: Sub-Agent Matching
+
+1. **Compare Query**: Match query against sub-agent semantic metadata
+2. **Use Multiple Signals**:
+   - `semanticKeywords` matching
+   - `semanticDescription` similarity
+   - `instructionExamples` matching
+   - Pattern-based matching
+3. **Rank Sub-Agents**: Calculate relevance score based on semantic understanding
+4. **Select Sub-Agents**: Choose most relevant sub-agent(s)
+
+### Step 5: Skill Discovery (if needed)
+
+If sub-agent references skills:
+
+1. **Read Skills**: List `agent-framework/skills/` directory
+2. **Read Skill File**: Read the referenced skill's `.md` file
+3. **Extract Usage**: Get usage instructions, parameters, examples
+4. **Use Skill**: Follow skill's instructions to perform operation
+
+## Context7 Integration (REQUIRED)
+
+### Automatic Documentation Fetching
+
+For EVERY query that involves code analysis, documentation, or library-specific questions:
+
+1. **Extract Keywords**: From the user query, extract meaningful keywords:
+   - Remove stop words
+   - Extract technical terms, library names
+   - Identify multi-word phrases
+   - Get 3-5 most relevant keywords
+
+2. **Search Context7** (PRIMARY STRATEGY):
+   
+   **For each extracted keyword** (try up to 3 keywords):
+   
+   **Step 1**: Call `mcp_context7_resolve-library-id` with:
+   - `libraryName`: [keyword from extraction]
+   - This searches Context7 docs list for matching documentation
+   - **If this tool fails or is unavailable, proceed to FALLBACK STRATEGY**
+   
+   **Step 2**: If Step 1 succeeds, call `mcp_context7_get-library-docs` with:
+   - `context7CompatibleLibraryID`: [use the resolved ID from step 1]
+   - `tokens`: 5000 (for comprehensive documentation)
+   - `topic`: [if a specific topic is mentioned in the query, e.g., "hooks", "routing"]
+   
+   **FALLBACK STRATEGY 1: Document Retrieval System** (if Context7 MCP fails):
+   
+   **Step 1**: Call `mcp_document-retrieval-system_search_documents` with:
+   - `query`: [full user query or primary keyword]
+   - `max_results`: 5
+   - `topics`: [extracted keywords array]
+   - `min_relevance`: 0.3
+   
+   **Step 2**: Call `mcp_document-retrieval-system_get_document_context` with:
+   - `query`: [full user query]
+   - `max_tokens`: 4000
+   - `max_results`: 5
+   
+   **FALLBACK STRATEGY 2: Web Search** (if Document Retrieval fails):
+   
+   Call `web_search` with:
+   - `search_term`: [primary keyword or query]
+   
+   **FINAL FALLBACK: Existing Knowledge** (if all fail):
+   
+   Use your existing knowledge, but note that documentation may be outdated.
+
+### Critical Context7 Instructions
+
+- **ALWAYS** extract keywords FIRST before calling Context7 tools
+- **ALWAYS** try Context7 MCP tools first (if available)
+- **ALWAYS** use fetched documentation as PRIMARY SOURCE
+- **ONLY** use existing knowledge to supplement, not replace, fetched docs
+- **ALWAYS** implement fallback chain: Context7 → Document Retrieval → Web Search → Knowledge
+
+## Context Window Optimization
+
+### Progressive Context Building
+
+1. **Level 1 - Agent Metadata** (~200 tokens):
+   - Read only YAML frontmatter from `agent.md`
+   - Extract: id, name, triggers, semanticKeywords, semanticDescription
+
+2. **Level 2 - Sub-Agent Metadata** (~500 tokens):
+   - Read only YAML frontmatter from matched sub-agent files
+   - Extract: id, name, semanticKeywords, instructionExamples, detectionRule
+
+3. **Level 3 - Pattern Definitions** (~1000 tokens):
+   - Read `anti-patterns/definitions.md` for matched patterns
+   - Extract: pattern definitions, detection rules
+
+4. **Level 4 - Full Documentation** (~5000 tokens, on-demand):
+   - Fetch via Context7 MCP when needed
+   - Only fetch when fix strategy requires documentation
+   - Use fetched docs as PRIMARY SOURCE
+
+### Token Budget Guidelines
+
+- **Agent Discovery**: 500 tokens max
+- **Query Matching**: 300 tokens max
+- **Sub-Agent Selection**: 500 tokens max
+- **Pattern Detection**: 1000 tokens max
+- **Documentation Fetch**: 5000 tokens (via Context7, on-demand)
+
+## Pre-Tool Validation (MANDATORY BEFORE ANY TOOL CALLS)
+
+**CRITICAL BLOCKING RULE**: Before calling ANY tool (grep, codebase_search, etc.) for pattern detection, you MUST complete pre-tool validation.
+
+### Pre-Tool Validation Checklist
+
+**BEFORE calling grep/codebase_search for pattern detection**:
+
+1. **Check**: Is pattern-matcher workflow required?
+   - Check if sub-agent has `skills: [pattern-matcher]`
+   - Check if sub-agent has `detectionRule` in frontmatter
+   - **If YES**: You MUST use pattern-matcher workflow, NOT tools
+   - **If NO**: Document why pattern-matcher is not required
+
+2. **Check**: Have you extracted detectionRule parameters?
+   - Extract `detectionRule.pattern` from sub-agent frontmatter
+   - Extract `detectionRule.type` from sub-agent frontmatter
+   - Extract `filePath` from query/context
+   - **If NO**: STOP. Extract parameters first.
+   - **If YES**: Display all three parameters explicitly
+
+3. **Check**: Are you about to call grep/codebase_search for pattern detection?
+   - **If YES and pattern-matcher is required**: STOP. Use pattern-matcher workflow instead.
+   - **If NO**: Proceed with appropriate action
+
+**BLOCKING RULE**: 
+- If pattern-matcher workflow is required, you CANNOT call grep/codebase_search
+- You MUST extract and display parameters before any pattern detection
+- You MUST use pattern-matcher workflow when required
+
+**VALIDATION CHECKPOINT**:
+- [ ] Did you check if pattern-matcher workflow is required? (YES/NO)
+- [ ] Did you extract and display all parameters? (YES/NO)
+- [ ] If pattern-matcher is required, did you block tool usage? (YES/NO)
+
+**IF ANY ANSWER IS NO**: STOP. Do NOT call tools. Complete validation first.
+
+## Pattern Detection and Fix Application
+
+**CRITICAL: Pattern-matcher is a conceptual workflow, NOT a tool. Do NOT search for a pattern-matcher tool. LLM performs mental AST analysis; no tools required. DO NOT use grep/codebase_search. Use mental AST analysis.**
+
+### Detection Process (Automatic)
+
+**CRITICAL AUTOMATIC WORKFLOW RULE**: 
+- IF sub-agent frontmatter contains `skills: [pattern-matcher]`
+- THEN pattern-matcher workflow MUST be automatically followed
+- **MANDATORY**: Extract parameters from sub-agent's `detectionRule`:
+  - `pattern`: Extract from `detectionRule.pattern` (REQUIRED)
+  - `type`: Extract from `detectionRule.type` (REQUIRED: "ast" or "regex")
+  - `filePath`: Extract from target file path (REQUIRED)
+- **MANDATORY**: Display all three parameters explicitly before proceeding
+- **DO NOT use grep/codebase_search. Use mental AST analysis.**
+- NO manual code analysis allowed
+- NO LLM knowledge usage allowed
+- Pattern-matcher analysis is the ONLY source of truth
+
+**MANDATORY PRE-REQUISITES** (Must complete before pattern detection):
+1. Read `tools/ast-parser-guide.md` (MANDATORY - cannot skip)
+2. Read `tools/automatic-pattern-detection.md` (MANDATORY - cannot skip)
+3. Read `skills/pattern-matcher.md` (MANDATORY - cannot skip)
+
+**AUTOMATIC WORKFLOW** (MUST FOLLOW EXACTLY):
+**LLM performs mental AST analysis. No tools required.**
+
+**STEP 1: Extract Parameters from Sub-Agent** (MANDATORY - BLOCKING):
+1. Read sub-agent frontmatter
+2. Extract `detectionRule.pattern` (e.g., "FunctionDeclaration | ArrowFunctionExpression | FunctionExpression")
+3. Extract `detectionRule.type` (e.g., "ast")
+4. Extract target file path from query/context
+5. **DISPLAY ALL THREE PARAMETERS EXPLICITLY**:
+   ```
+   Extracted Parameters:
+   - pattern: "[EXACT PATTERN FROM detectionRule.pattern]"
+   - type: "[EXACT TYPE FROM detectionRule.type]"
+   - filePath: "[EXACT PATH FROM CONTEXT]"
+   ```
+6. **VALIDATION CHECKPOINT**: Can you display all three? If NO, STOP.
+
+**STEP 2: Pre-Tool Validation** (MANDATORY - BLOCKING):
+1. **Check**: Is pattern-matcher workflow required?
+   - Check sub-agent frontmatter for `skills: [pattern-matcher]`
+   - Check if `detectionRule` exists
+2. **If YES**: You MUST use pattern-matcher workflow
+   - ❌ DO NOT call grep/codebase_search
+   - ✅ Proceed to Step 3
+3. **If NO**: Document why pattern-matcher is not required
+   - Then proceed with appropriate tool
+
+**STEP 3: Read Target File** (MANDATORY):
+1. Use `read_file` tool to read target file
+2. Extract `code` from file content
+
+**STEP 4: AUTOMATICALLY Follow Pattern-Matcher Workflow** (MANDATORY):
+1. Apply pattern-matcher analysis with EXACT parameters from Step 1:
+   - pattern: [from detectionRule.pattern - use EXACT extracted value]
+   - type: [from detectionRule.type - use EXACT extracted value]
+   - code: [from read_file]
+   - filePath: [target file path - use EXACT extracted value]
+2. LLM performs mental AST analysis with extracted parameters
+3. NO tools required (grep, codebase_search, etc.)
+4. NO manual analysis
+5. NO LLM knowledge usage for pattern detection
+
+**STEP 5: Process Matches** (MANDATORY):
+1. Use matches array from pattern-matcher analysis as ONLY source
+2. Verify context using pattern-matcher analysis results ONLY
+3. NO manual pattern identification
+
+**VALIDATION**: Can you show the exact parameters extracted from sub-agent's detectionRule? (Must display all three) If NO, workflow is INVALID.
+
+**Match Patterns** (Automatic): 
+   - For AST patterns: LLM automatically identifies code structures matching pattern
+   - For regex patterns: LLM automatically uses regex matching
+   - For custom patterns: Follow sub-agent instructions automatically
+
+**Return Matches**: Automatically return matches with locations and context in pattern-matcher format
+
+### Fix Application Process
+
+**CRITICAL RULE**: Fixes MUST follow sub-agent examples strictly.
+
+1. **Read Fix Strategy**: From sub-agent markdown file
+2. **Read Sub-Agent Examples** (MANDATORY):
+   - Read "Before (Problematic Code)" section from sub-agent file
+   - Read "After (Fixed Code)" section from sub-agent file
+   - Extract exact fix patterns from examples
+   
+3. **Apply Fix Using Sub-Agent Examples** (PRIMARY METHOD):
+   - Match detected issue to sub-agent example
+   - Apply fix using EXACT pattern from "After (Fixed Code)" example
+   - Follow step-by-step instructions from sub-agent file
+   - Use exact import statements from examples
+   - Use exact component structure from examples
+   
+4. **Fallback to General Examples** (ONLY if sub-agent examples don't exist):
+   - If sub-agent file has no "Before/After" examples
+   - Then use general React/Next.js best practices
+   - But document that sub-agent examples were not available
+   
+5. **Validate Fix**: Ensure fix matches sub-agent example pattern
+6. **Report Results**: Show what was fixed and which example was used
+
+**VALIDATION**: 
+- Can you point to the exact sub-agent example you used? (Must show example)
+- If no sub-agent example exists, did you document this? (Must show documentation)
+
+**FORBIDDEN ACTIONS**:
+- ❌ Using general knowledge without checking sub-agent examples first
+- ❌ Not following exact patterns from sub-agent examples
+- ❌ Skipping sub-agent example review
+- ❌ Using LLM knowledge when sub-agent examples exist
+
+## Skills Usage
+
+### Using Skills in Sub-Agents (Automatic)
+
+When a sub-agent needs to use a skill (e.g., pattern-matcher):
+
+1. **Read Skill File**: Automatically read `skills/[skill-name].md`
+2. **Read AST Parser Guides**: Automatically read `tools/ast-parser-guide.md` and `tools/automatic-pattern-detection.md`
+3. **Automatic Detection**: Follow automatic detection workflow:
+   - Read file using `read_file` tool (automatic)
+   - Analyze code structure automatically (identify AST nodes)
+   - Match pattern automatically (compare nodes against pattern)
+   - Verify context automatically (check useEffect, event handlers, etc.)
+4. **Use Results**: Automatically use skill's return values as specified
+
+Example with pattern-matcher (Automatic):
+```
+1. Read skills/pattern-matcher.md (automatic)
+2. Read tools/ast-parser-guide.md (automatic)
+3. Read file using read_file tool (automatic)
+4. Automatically identify: router.push() → CallExpression, callee.property.name='push'
+5. Automatically match against pattern: CallExpression[callee.property.name='push']
+6. Automatically verify context: Is it in dialog component?
+7. Automatically return matches in pattern-matcher format
+```
+
+## Semantic Matching Guidelines
+
+### Query Analysis
+
+When analyzing a user query:
+
+1. **Extract Intent**: What is the user trying to do?
+   - detect, fix, scan, explain, understand
+
+2. **Extract Keywords**: What are the key terms?
+   - Technical terms, library names, concepts
+   - Remove stop words
+   - Prioritize specific terms
+
+3. **Extract Context**: What is the context?
+   - File path, code snippet, directory
+   - Domain (hydration, performance, security, etc.)
+
+### Agent Matching
+
+Compare query against agent metadata:
+- **Keyword Matching**: Check if query keywords match `triggers` or `semanticKeywords`
+- **Description Matching**: Compare query intent with `semanticDescription`
+- **Scoring**: Calculate relevance score based on semantic understanding
+- **Selection**: Choose agent(s) with highest relevance
+
+### Sub-Agent Matching
+
+Compare query against sub-agent metadata:
+- **Keyword Matching**: Check if query keywords match `semanticKeywords`
+- **Description Matching**: Compare query intent with `semanticDescription`
+- **Example Matching**: Check if query matches `instructionExamples`
+- **Pattern Matching**: Fallback to pattern-based matching
+- **Scoring**: Calculate relevance score
+- **Selection**: Choose sub-agent(s) with highest relevance
+
+## Example Workflow
+
+### Example: "Fix dialog reopening when navigating"
+
+1. **Phase 0 - Load Agents**: Read `agent-framework/AGENT_REGISTRY.md` (MANDATORY FIRST STEP)
+2. **Match Query**: 
+   - Keywords: ["dialog", "reopening", "navigation"]
+   - Intent: "fix"
+   - Domain: "hydration"
+   - Matches: Hydration Agent (high relevance)
+
+3. **Discover Sub-Agents**: Read `agents/hydration-agent/sub-agents/` directory
+4. **Match Sub-Agent**:
+   - Query matches `dialog-navigation-bug.md`:
+     - semanticKeywords: ["dialog", "navigation", "reopen"]
+     - instructionExamples: ["Fix dialog reopening when navigating"]
+   - High relevance match
+
+5. **Read Sub-Agent**: Read `dialog-navigation-bug.md` for fix instructions
+6. **Fetch Docs** (if needed): Use Context7 to fetch React/Next.js navigation docs
+7. **Apply Fix**: Follow fix strategy from sub-agent markdown
+8. **Report Results**: Show what was fixed
+
+## Important Notes
+
+- **Always read markdown files** - Don't assume agent/sub-agent structure
+- **Always use Context7** - Fetch documentation for code-related queries
+- **Always implement fallbacks** - Don't fail if Context7 is unavailable
+- **Always optimize context** - Use progressive loading, don't overload
+- **Always use skills** - Don't duplicate logic, use reusable skills
+- **Always be explicit** - Provide clear, numbered instructions
+- **Always validate** - Check fixes don't break code structure
+
+## Workflow Enforcement (MANDATORY)
+
+**CRITICAL**: The complete agent framework workflow MUST be followed for ALL queries. This is not optional.
+
+### Mandatory Validation Checkpoints
+
+Before proceeding to the next phase, you MUST verify completion of the current phase:
+
+1. **After Phase 0**: Can you list all available agents with their triggers and semantic keywords?
+2. **After Phase 1**: Which agent(s) did you match and why?
+3. **After Phase 2**: Which sub-agent(s) did you select and why?
+4. **After Phase 3**: Did you use pattern-matcher skill? (if required by sub-agent)
+5. **After Phase 4**: Did you fetch documentation via Context7 (or fallback)? (for code-related queries)
+6. **Before Response**: Can you trace your response to agent framework sources?
+
+### Enforcement Mechanisms
+
+**Reference Validation Checklist**: Before responding, you MUST reference `agent-framework/WORKFLOW_VALIDATION.md` and verify all checkpoints are completed.
+
+**Common Violations (STRICTLY FORBIDDEN)**:
+- ❌ Skipping Phase 0 (agent loading)
+- ❌ Using grep/codebase_search instead of pattern-matcher skill
+- ❌ Skipping Context7 documentation fetching
+- ❌ Using existing knowledge without attempting Context7 first
+- ❌ Applying fixes without following sub-agent workflow
+- ❌ Responding without validation checklist completion
+
+### Correct vs Incorrect Workflow Examples
+
+**❌ INCORRECT Workflow**:
+```
+1. User asks: "Fix hydration issues"
+2. LLM uses grep to find window/document access
+3. LLM applies fix based on existing knowledge
+4. LLM responds without using agent framework
+```
+
+**✅ CORRECT Workflow**:
+```
+1. User asks: "Fix hydration issues"
+2. Phase 0: Load AGENT_REGISTRY.md
+3. Phase 1: Match query to hydration-agent (semantic matching)
+4. Phase 2: Load sub-agents, match to client-only-ui-hydration
+5. Phase 3: Use pattern-matcher skill with AST pattern for window/document
+6. Phase 4: Fetch React/Next.js docs via Context7
+7. Phase 5: Follow sub-agent fix workflow from markdown
+8. Validation: Verify all phases completed
+9. Respond with fix based on agent framework
+```
+
+### Validation Before Response
+
+Before responding to the user, you MUST be able to answer:
+
+1. **Which agent did you use?** (Must be from AGENT_REGISTRY.md)
+2. **Which sub-agent did you use?** (Must be from sub-agents directory)
+3. **Did you use pattern-matcher skill?** (If sub-agent requires it)
+4. **Did you fetch Context7 docs?** (If code-related query)
+5. **Did you follow sub-agent fix workflow?** (If fix was applied)
+
+If you cannot answer these questions, you have NOT used the complete agent framework workflow.
+
+## File Reading Guidelines
+
+### Reading Agent Files
+
+```markdown
+1. List directory: agent-framework/agents/
+2. For each agent directory:
+   a. Read agents/[agent-name]/agent.md
+   b. Parse YAML frontmatter
+   c. Read markdown content
+```
+
+### Reading Sub-Agent Files
+
+```markdown
+1. List directory: agents/[agent-name]/sub-agents/
+2. For each .md file:
+   a. Read sub-agents/[sub-agent-name].md
+   b. Parse YAML frontmatter
+   c. Read markdown content
+```
+
+### Reading Skill Files
+
+```markdown
+1. Read skills/[skill-name].md
+2. Parse YAML frontmatter
+3. Read usage instructions
+4. Follow skill's parameter format
+```
+
+### Reading Pattern Files
+
+```markdown
+1. Read agents/[agent-name]/anti-patterns/definitions.md
+2. Parse pattern definitions
+3. Extract detection rules
+4. Map patterns to sub-agents
+```
+
+## Error Handling
+
+- **If agent not found**: Inform user, suggest similar agents
+- **If sub-agent not found**: Use pattern matching as fallback
+- **If skill not found**: Implement basic functionality, note skill missing
+- **If Context7 fails**: Use fallback chain (Document Retrieval → Web Search → Knowledge)
+- **If pattern match fails**: Report no matches found, suggest manual review
+
+## Success Criteria
+
+For successful agent execution:
+1. ✅ Agent discovered and matched semantically
+2. ✅ Sub-agent selected based on query intent
+3. ✅ Patterns detected using skills (if needed)
+4. ✅ Documentation fetched via Context7 (if needed)
+5. ✅ Fixes applied based on markdown instructions
+6. ✅ Results reported clearly to user
+
+Remember: This framework is markdown-based. Read files, parse YAML, follow instructions, use Context7, and apply fixes based on markdown content.

@@ -1,0 +1,339 @@
+# Cursor Rules - HMS Stack
+
+## Agent Framework Integration (MANDATORY)
+
+**CRITICAL**: This workspace uses the `@agent-framework` system located in `agent-framework/`. You MUST use the COMPLETE agent framework workflow for ALL queries. This is not optional.
+
+**ENFORCEMENT**: Before responding to ANY query, you MUST complete ALL phases of the agent framework workflow. Reference `agent-framework/WORKFLOW_VALIDATION.md` to verify compliance.
+
+**DO NOT SKIP ANY PHASE**: Skipping phases violates the framework requirements and results in incomplete analysis.
+
+---
+
+## Complete Agent Framework Workflow (MANDATORY)
+
+### Phase 0: Mandatory Agent Loading (MUST HAPPEN FIRST - CANNOT SKIP)
+
+**CRITICAL**: This phase is MANDATORY and must happen BEFORE processing any user query. Do NOT skip this phase.
+
+For EVERY user query, BEFORE you begin processing, you MUST:
+
+1. **Load Agent Registry** (PRIMARY METHOD):
+   - Read `agent-framework/AGENT_REGISTRY.md` FIRST
+   - This file contains consolidated metadata for ALL agents
+   - Extract all agent IDs, names, descriptions, triggers, and semantic keywords
+   - Keep this registry in your working memory throughout query processing
+
+2. **Alternative Method** (if registry doesn't exist):
+   - List the `agent-framework/agents/` directory
+   - For each agent directory, read `agent.md` file
+   - Extract YAML frontmatter metadata from each agent
+   - Build complete agent list in memory
+
+3. **Verify Agent Availability**:
+   - Ensure you have loaded metadata for ALL available agents:
+     - `hydration-agent`
+     - `performance-agent`
+     - `dependency-agent`
+   - Verify you have: triggers, semanticKeywords, semanticDescription, capabilities for each
+
+4. **Maintain Agent Context**:
+   - Keep all agent metadata in your working memory
+   - Do NOT discard agent information after loading
+   - Agents should remain available throughout the entire query processing
+
+**Validation Checkpoint**: After Phase 0, verify you can list all available agents with their triggers and semantic keywords. If NO, return to Phase 0.
+
+---
+
+### Phase 1: Semantic Query Matching (MANDATORY)
+
+1. **Analyze Query**: Extract intent, keywords, and context from user query
+2. **Extract Keywords**: 
+   - Remove stop words (the, a, an, how, what, etc.)
+   - Extract technical terms, library names, concepts
+   - Identify multi-word phrases
+   - Prioritize longer, more specific terms
+3. **Match to Agents**: Compare query against agent metadata:
+   - Check if query keywords match `triggers` or `semanticKeywords`
+   - Compare query intent with `semanticDescription`
+   - Rank agents by relevance
+4. **Select Agent**: Choose most relevant agent(s) based on semantic understanding
+
+**Validation Checkpoint**: Which agent(s) did you match and why? Document your reasoning.
+
+---
+
+### Phase 2: Sub-Agent Discovery & Matching (MANDATORY IF AGENT MATCHED)
+
+Once an agent is selected:
+
+1. **Read Sub-Agents**: List `agents/[agent-name]/sub-agents/` directory
+2. **Read Sub-Agent Files**: Read all `.md` files in sub-agents directory
+3. **Extract Metadata**: Parse YAML frontmatter for each sub-agent:
+   - `id`, `name`, `description`
+   - `semanticKeywords`, `semanticDescription`
+   - `instructionExamples`
+   - `detectionRule`
+   - `context7` configuration
+4. **Read Patterns**: Read `anti-patterns/definitions.md` to understand patterns
+5. **Match Sub-Agent**: Compare query against sub-agent semantic metadata:
+   - `semanticKeywords` matching
+   - `semanticDescription` similarity
+   - `instructionExamples` matching
+   - Pattern-based matching
+6. **Select Sub-Agent**: Choose most relevant sub-agent(s)
+
+**Validation Checkpoint**: Which sub-agent(s) did you select and why? If NO sub-agent matched, document why.
+
+---
+
+### Phase 3: Pattern Detection (MANDATORY IF SUB-AGENT REQUIRES)
+
+**CRITICAL**: If sub-agent references skills (e.g., pattern-matcher), you MUST use automatic AST pattern detection. DO NOT use grep/codebase_search as a substitute.
+
+1. **Read Detection Rules**: From sub-agent's `detectionRule` in frontmatter
+2. **Read Skill File**: If sub-agent references skills, read skill file from `skills/` (e.g., `skills/pattern-matcher.md`)
+3. **Read AST Parser Guides** (AUTOMATIC):
+   - Read `tools/ast-parser-guide.md` for automatic detection workflow
+   - Read `tools/automatic-pattern-detection.md` for pattern recognition details
+4. **Use Automatic Pattern Detection** (MANDATORY):
+   - **Read File**: Automatically use `read_file` tool to get code content
+   - **Analyze Code Structure**: Automatically identify AST nodes:
+     - Function calls: `router.push()` → CallExpression
+     - Property access: `window.location` → MemberExpression
+     - Import statements: `import ...` → ImportDeclaration
+   - **Match Pattern**: Automatically compare identified nodes against pattern from sub-agent
+   - **Verify Context**: Automatically check if matches are in problematic locations:
+     - Window/document access: Is it in useEffect? In useState initial? During render?
+     - Router.push: Is it in dialog component? Should dialog be closed first?
+   - **Return Matches**: Automatically format matches in pattern-matcher skill format
+5. **Process Matches**: Use automatically detected matches for sub-agent fix workflow
+
+**Validation Checkpoint**: Did you automatically detect AST patterns? If sub-agent requires it and you didn't use automatic detection, you MUST use it now.
+
+**DO NOT**:
+- ❌ Use grep/codebase_search instead of automatic AST pattern detection
+- ❌ Skip pattern detection entirely
+- ❌ Not verify matches in context automatically
+- ❌ Construct manual commands - detection is automatic
+
+---
+
+### Phase 4: Context7 Documentation Fetching (MANDATORY FOR CODE-RELATED QUERIES)
+
+**CRITICAL**: For EVERY query that involves code analysis, documentation, or library-specific questions, you MUST fetch documentation via Context7 (with fallback chain).
+
+1. **Extract Keywords**: From the user query, extract 3-5 most relevant keywords:
+   - Remove stop words
+   - Extract technical terms, library names
+   - Identify multi-word phrases
+
+2. **Search Context7** (PRIMARY STRATEGY):
+   
+   **For each extracted keyword** (try up to 3 keywords):
+   
+   **Step 1**: Call `mcp_context7_resolve-library-id` with:
+   - `libraryName`: [keyword from extraction]
+   - **If this tool fails or is unavailable, proceed to FALLBACK STRATEGY**
+   
+   **Step 2**: If Step 1 succeeds, call `mcp_context7_get-library-docs` with:
+   - `context7CompatibleLibraryID`: [use the resolved ID from step 1]
+   - `tokens`: 5000 (for comprehensive documentation)
+   - `topic`: [if a specific topic is mentioned in the query, e.g., "hooks", "routing"]
+
+3. **FALLBACK STRATEGY 1: Document Retrieval System** (if Context7 MCP fails):
+   
+   **Step 1**: Call `mcp_document-retrieval-system_search_documents` with:
+   - `query`: [full user query or primary keyword]
+   - `max_results`: 5
+   - `topics`: [extracted keywords array]
+   - `min_relevance`: 0.3
+   
+   **Step 2**: Call `mcp_document-retrieval-system_get_document_context` with:
+   - `query`: [full user query]
+   - `max_tokens`: 4000
+   - `max_results`: 5
+
+4. **FALLBACK STRATEGY 2: Web Search** (if Document Retrieval fails):
+   
+   Call `web_search` with:
+   - `search_term`: [primary keyword or query]
+
+5. **FINAL FALLBACK: Existing Knowledge** (if all fail):
+   
+   Use your existing knowledge, but note that documentation may be outdated.
+
+**Critical Context7 Instructions**:
+- **ALWAYS** extract keywords FIRST before calling Context7 tools
+- **ALWAYS** try Context7 MCP tools first (if available)
+- **ALWAYS** use fetched documentation as PRIMARY SOURCE
+- **ONLY** use existing knowledge to supplement, not replace, fetched docs
+- **ALWAYS** implement fallback chain: Context7 → Document Retrieval → Web Search → Knowledge
+
+**Validation Checkpoint**: Did you fetch documentation via Context7 (or fallback)? If code-related query and you didn't fetch docs, you MUST fetch them now.
+
+**DO NOT**:
+- ❌ Skip Context7 entirely
+- ❌ Use existing knowledge without attempting Context7 first
+- ❌ Not use fetched docs as PRIMARY SOURCE
+
+---
+
+### Phase 5: Sub-Agent Fix Execution (MANDATORY IF FIX NEEDED)
+
+1. **Read Fix Strategy**: From sub-agent markdown file
+2. **Fetch Documentation** (if needed): Use Context7 to fetch relevant docs (see Phase 4)
+3. **Apply Fix**: Follow step-by-step instructions in sub-agent markdown
+4. **Use Examples**: Reference before/after examples in sub-agent file
+5. **Validate Fix**: Ensure fix doesn't break code structure
+6. **Report Results**: Show what was fixed and how
+
+**Validation Checkpoint**: Did you follow the sub-agent's fix workflow? If you applied a fix without following sub-agent instructions, you MUST redo using sub-agent workflow.
+
+---
+
+## Pre-Response Validation (MANDATORY)
+
+Before responding to the user, you MUST verify:
+
+- [ ] **Phase 0 Completed**: Agent registry loaded
+- [ ] **Agent Matched**: Query matched to agent(s) semantically
+- [ ] **Sub-Agents Loaded**: Matched sub-agents read and understood
+- [ ] **AST Parser Guides Read**: `tools/ast-parser-guide.md` and `tools/automatic-pattern-detection.md` read (if pattern detection required)
+- [ ] **Automatic Pattern Detection Used**: AST patterns automatically detected (if required by sub-agent)
+- [ ] **Context7 Fetched**: Documentation fetched via Context7 or fallback (for code-related queries)
+- [ ] **Sub-Agent Workflow Followed**: Fix strategy from sub-agent followed
+- [ ] **Framework Used**: Agent framework was the PRIMARY method, not a supplement
+
+**Final Validation Question**: Can you trace your response back to:
+1. Agent selection based on semantic matching?
+2. Sub-agent selection based on query intent?
+3. Automatic AST pattern detection (using guides and automatic recognition)?
+4. Documentation from Context7 (or fallback)?
+5. Fix strategy from sub-agent markdown?
+
+If you cannot trace your response to these sources, you have NOT used the complete agent framework workflow.
+
+**Reference**: See `agent-framework/WORKFLOW_VALIDATION.md` for detailed validation checklist.
+
+---
+
+## Agent Framework Reference
+
+- **Location**: `agent-framework/`
+- **Registry**: `agent-framework/AGENT_REGISTRY.md` (primary source for agent discovery)
+- **Detailed Instructions**: `agent-framework/.cursorrules` (comprehensive agent usage guide)
+- **Validation Checklist**: `agent-framework/WORKFLOW_VALIDATION.md` (MUST reference before responding)
+- **Documentation**: `agent-framework/README.md`
+
+---
+
+## DO NOT (Common Violations)
+
+**CRITICAL**: The following are STRICTLY FORBIDDEN:
+
+- ❌ **DO NOT** skip Phase 0 (agent loading) - This is MANDATORY
+- ❌ **DO NOT** use grep/codebase_search instead of pattern-matcher skill when sub-agent requires it
+- ❌ **DO NOT** skip Context7 documentation fetching for code-related queries
+- ❌ **DO NOT** use existing knowledge without attempting Context7 first
+- ❌ **DO NOT** apply fixes without following sub-agent workflow
+- ❌ **DO NOT** respond without completing validation checklist
+- ❌ **DO NOT** use agent framework as supplement - it must be PRIMARY method
+- ❌ **DO NOT** skip pattern detection when sub-agent requires it
+- ❌ **DO NOT** skip sub-agent loading when agent is matched
+
+---
+
+## Skills Usage (MANDATORY WHEN REQUIRED - AUTOMATIC)
+
+When a sub-agent references skills (e.g., pattern-matcher):
+
+1. **Read Skill File**: Automatically read `skills/[skill-name].md`
+2. **Read AST Parser Guides**: Automatically read `tools/ast-parser-guide.md` and `tools/automatic-pattern-detection.md`
+3. **Automatic Detection**: Follow automatic detection workflow:
+   - Automatically read file using `read_file` tool
+   - Automatically analyze code structure to identify AST nodes
+   - Automatically match nodes against pattern from sub-agent
+   - Automatically verify context (useEffect, event handlers, etc.)
+   - Automatically return matches in pattern-matcher format
+4. **Use Results**: Automatically use skill's return values as specified
+
+**Example with pattern-matcher (Automatic)**:
+```
+1. Read skills/pattern-matcher.md (automatic)
+2. Read tools/ast-parser-guide.md (automatic)
+3. Read file using read_file tool (automatic)
+4. Automatically identify: router.push() → CallExpression, callee.property.name='push'
+5. Automatically match against pattern: CallExpression[callee.property.name='push']
+6. Automatically verify context: Is it in dialog component?
+7. Automatically return matches in pattern-matcher format
+```
+
+**DO NOT**:
+- ❌ Substitute skills with grep, codebase_search, or other tools
+- ❌ Construct manual commands - detection is automatic
+- ❌ Skip automatic pattern detection when sub-agent requires it
+
+---
+
+## Pattern-Matcher Automatic Invocation (MANDATORY)
+
+**CRITICAL RULE**: 
+- When sub-agent requires pattern-matcher, LLM MUST automatically invoke it
+- NO manual code analysis allowed
+- NO LLM knowledge usage for pattern detection
+- Pattern-matcher is the ONLY source of truth
+
+**Automatic Invocation Trigger**:
+- IF: Sub-agent frontmatter contains `skills: [pattern-matcher]`
+- THEN: LLM MUST automatically:
+  1. Read AST parser guides (MANDATORY)
+     - Read `tools/ast-parser-guide.md`
+     - Read `tools/automatic-pattern-detection.md`
+  2. Extract detectionRule from sub-agent
+     - Extract `detectionRule.pattern`
+     - Extract `detectionRule.type`
+  3. Read target file(s) using `read_file` tool
+  4. Invoke pattern-matcher with extracted parameters:
+     - pattern: [from detectionRule.pattern]
+     - type: [from detectionRule.type]
+     - code: [from read_file]
+     - filePath: [target file path]
+  5. Use matches array as ONLY source for pattern detection
+
+**Validation**:
+Before responding, verify:
+- Pattern-matcher was automatically invoked? (YES/NO)
+- Parameters extracted from sub-agent's detectionRule? (YES/NO)
+- Matches returned in pattern-matcher format? (YES/NO)
+- Context verified using pattern-matcher results? (YES/NO)
+
+**IF ANY ANSWER IS NO**: Response is INVALID. Return to Phase 3 and invoke pattern-matcher.
+
+**Forbidden Actions**:
+- ❌ Manual code analysis using LLM knowledge
+- ❌ Using grep/codebase_search instead of pattern-matcher
+- ❌ Skipping pattern-matcher invocation
+- ❌ Using existing knowledge to identify patterns
+- ❌ Not reading AST parser guides before invocation
+
+**Reference**: See `agent-framework/tools/pattern-matcher-invocation-guide.md` for detailed invocation workflow.
+
+---
+
+## Context7 Integration
+
+This workspace also uses Context7 MCP for documentation fetching. See `activity-demo/.cursorrules` for Context7 integration details.
+
+## Code Quality Standards
+
+Follow the code quality standards defined in user rules:
+- TypeScript with strict typing
+- React/Next.js App Router best practices
+- Ant Design for UI components
+- Redux Toolkit for state management
+- Tailwind CSS for styling
+- Performance optimization
+- Accessibility standards
+
