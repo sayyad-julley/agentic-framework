@@ -154,3 +154,7 @@ playwright/.cache/
 .terraform/
 .terraform.lock.hcl
 
+# Mintlify
+.mintlify/
+mint.json
+

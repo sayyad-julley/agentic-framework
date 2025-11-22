@@ -1,0 +1,20 @@
+<!-- Maven Dependency (pom.xml) -->
+<dependency>
+    <groupId>org.flywaydb</groupId>
+    <artifactId>flyway-core</artifactId>
+    <version>${FLYWAY_VERSION}</version>
+</dependency>
+
+<!-- PostgreSQL Database Support -->
+<dependency>
+    <groupId>org.flywaydb</groupId>
+    <artifactId>flyway-database-postgresql</artifactId>
+    <version>${FLYWAY_VERSION}</version>
+</dependency>
+
+<!-- Gradle Dependency (build.gradle) -->
+dependencies {
+    implementation 'org.flywaydb:flyway-core:${FLYWAY_VERSION}'
+    implementation 'org.flywaydb:flyway-database-postgresql:${FLYWAY_VERSION}'
+}
+

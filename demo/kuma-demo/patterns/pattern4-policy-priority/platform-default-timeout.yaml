@@ -1,0 +1,25 @@
+# Pattern 4: Platform Default Timeout Policy
+# Platform teams define organization-wide defaults using kind: Mesh targets
+# with kuma.io/policy-role: system (lowest priority)
+
+apiVersion: kuma.io/v1alpha1
+kind: MeshTimeout
+metadata:
+  name: platform-default-timeouts
+  labels:
+    kuma.io/policy-role: system  # Lowest priority
+    kuma.io/mesh: default
+spec:
+  # Coarse-grained target (applies to entire mesh)
+  targetRef:
+    kind: Mesh
+  to:
+  - targetRef:
+      kind: Mesh
+    default:
+      connectionTimeout: 5s
+      idleTimeout: 30m
+      http:
+        requestTimeout: 15s
+        streamIdleTimeout: 30m
+

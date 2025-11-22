@@ -132,3 +132,5 @@ console.log('   4. Check Cursor\'s developer console for errors');
 console.log('   5. Verify the actual tool names in Cursor\'s MCP tool list\n');
 
 
+
+

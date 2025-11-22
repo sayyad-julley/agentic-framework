@@ -1,0 +1,56 @@
+# Pattern 3: Internal Service Mesh Policy
+# Kuma manages internal service-to-service traffic with L4/L7 policies
+
+apiVersion: kuma.io/v1alpha1
+kind: MeshTrafficPermission
+metadata:
+  name: allow-internal-services
+spec:
+  targetRef:
+    kind: Mesh
+  from:
+  - targetRef:
+      kind: Mesh
+---
+# Timeout policy for internal services
+apiVersion: kuma.io/v1alpha1
+kind: MeshTimeout
+metadata:
+  name: internal-service-timeouts
+spec:
+  targetRef:
+    kind: Mesh
+  to:
+  - targetRef:
+      kind: Mesh
+    default:
+      connectionTimeout: 5s
+      idleTimeout: 30m
+      http:
+        requestTimeout: 15s
+        streamIdleTimeout: 30m
+---
+# Retry policy for internal services
+apiVersion: kuma.io/v1alpha1
+kind: MeshRetry
+metadata:
+  name: internal-service-retries
+spec:
+  targetRef:
+    kind: Mesh
+  to:
+  - targetRef:
+      kind: Mesh
+    default:
+      http:
+        numRetries: 3
+        perTryTimeout: 5s
+        backOff:
+          baseInterval: 0.1s
+          maxInterval: 3s
+        retryOn:
+          - connect-failure
+          - refused-stream
+          - gateway-error
+          - reset
+

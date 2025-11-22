@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             xmlns:flowable="http://flowable.org/bpmn"
+             typeLanguage="http://www.w3.org/2001/XMLSchema"
+             expressionLanguage="http://www.w3.org/1999/XPath"
+             targetNamespace="http://www.flowable.org/processdef">
+
+  <process id="transientVariables" name="Transient Variable Doctrine" isExecutable="true">
+    
+    <startEvent id="start" name="Start"/>
+    
+    <sequenceFlow id="flow1" sourceRef="start" targetRef="fetchData"/>
+    
+    <!-- Service Task: Demonstrates Transient Variable Doctrine -->
+    <serviceTask id="fetchData" 
+                 name="Fetch Data with Transient Variables"
+                 flowable:class="com.example.flowable.delegates.TransientVariableDelegate"/>
+    
+    <sequenceFlow id="flow2" sourceRef="fetchData" targetRef="checkStatus"/>
+    
+    <!-- Exclusive Gateway: Uses transient variable for routing -->
+    <exclusiveGateway id="checkStatus" name="Check API Status"/>
+    
+    <!-- ✅ BEST PRACTICE: Use transient variable in condition -->
+    <!-- Transient variable 'status' is used for immediate routing -->
+    <!-- It will be automatically discarded at next wait state -->
+    <sequenceFlow id="flowToApproved" sourceRef="checkStatus" targetRef="approvedTask">
+      <conditionExpression xsi:type="tFormalExpression">${status == 200}</conditionExpression>
+    </sequenceFlow>
+    
+    <sequenceFlow id="flowToRejected" sourceRef="checkStatus" targetRef="rejectionTask">
+      <conditionExpression xsi:type="tFormalExpression">${status != 200}</conditionExpression>
+    </sequenceFlow>
+    
+    <!-- Approved Path -->
+    <userTask id="approvedTask" name="Process Approved Order"/>
+    <sequenceFlow id="flow3" sourceRef="approvedTask" targetRef="end"/>
+    
+    <!-- Rejected Path -->
+    <userTask id="rejectionTask" name="Handle Rejection"/>
+    <sequenceFlow id="flow4" sourceRef="rejectionTask" targetRef="end"/>
+    
+    <endEvent id="end" name="End"/>
+    
+  </process>
+  
+</definitions>
+

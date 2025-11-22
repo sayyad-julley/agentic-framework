@@ -1,0 +1,60 @@
+# Pattern 2: Service Discovery Example
+# Built-in DNS server resolves services to local replicas or remote Zone Ingress addresses
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: orders-service
+  namespace: default
+  labels:
+    kuma.io/service: orders
+spec:
+  selector:
+    app: orders
+  ports:
+  - port: 8080
+    targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orders-service
+  namespace: default
+  labels:
+    app: orders
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: orders
+  template:
+    metadata:
+      labels:
+        app: orders
+        kuma.io/service: orders
+      annotations:
+        kuma.io/sidecar-injection: enabled
+    spec:
+      containers:
+      - name: orders
+        image: nginx:alpine
+        ports:
+        - containerPort: 8080
+---
+# Example: Service in remote zone
+# Built-in DNS resolves to Zone Ingress when local replica unavailable
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-service
+  namespace: default
+  labels:
+    kuma.io/service: payment
+    kuma.io/zone: eu-west  # Service in remote zone
+spec:
+  selector:
+    app: payment
+  ports:
+  - port: 8080
+    targetPort: 8080
+

@@ -1,0 +1,15 @@
+opa:
+  url: http://localhost:8181
+  policy:
+    path: policy.rbac.allow
+  cache:
+    enabled: false
+
+spring:
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://localhost:9000
+          jwk-set-uri: http://localhost:9000/.well-known/jwks.json
+

@@ -43,6 +43,15 @@ context7:
     - bundle size
     - code splitting
   fetchStrategy: on-demand
+proactiveMode:
+  enabled: true
+  triggers:
+    - filePatterns: ["*.tsx", "*.ts", "*.jsx", "*.js"]
+    - componentCreation: true
+    - reactComponents: true
+    - nextjsPages: true
+  autoScan: true
+  autoFix: true
 ---
 
 # Performance Agent
@@ -86,14 +95,28 @@ This agent includes the following sub-agents:
    - Fixes large bundle sizes through code splitting and optimization
    - Uses pattern-matcher skill for import analysis
 
-## Usage
+## Reactive Flow Usage
 
-The agent is automatically activated when queries contain performance-related keywords such as:
-- "performance issue"
-- "unnecessary re-render"
-- "bundle size too large"
-- "slow rendering"
-- "optimization needed"
+This agent activates in reactive mode when queries contain:
+- "fix performance issue"
+- "fix unnecessary re-render"
+- "fix bundle size too large"
+- "optimize slow rendering"
+- "fix optimization needed"
+
+## Proactive Flow Usage
+
+This agent automatically activates in proactive mode when:
+- Creating React/Next.js components (*.tsx, *.ts, *.jsx, *.js)
+- Creating components that receive props
+- Adding import statements
+- Creating event handlers
+
+**Proactive Behavior**:
+- Scans newly created code for performance anti-patterns
+- Applies memoization automatically (React.memo, useMemo, useCallback)
+- Optimizes bundle size through code splitting
+- Prevents unnecessary re-renders during implementation
 
 ## Detection Strategy
 

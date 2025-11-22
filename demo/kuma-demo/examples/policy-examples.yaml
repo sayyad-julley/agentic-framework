@@ -1,0 +1,105 @@
+# Policy Examples
+# Demonstrates various Kuma policies
+
+apiVersion: kuma.io/v1alpha1
+kind: Mesh
+metadata:
+  name: default
+spec:
+  mtls:
+    backends:
+    - name: builtin
+      type: builtin
+    enabledBackend: builtin
+---
+# Traffic Permission: Allow specific service communication
+apiVersion: kuma.io/v1alpha1
+kind: MeshTrafficPermission
+metadata:
+  name: allow-frontend-to-backend
+spec:
+  targetRef:
+    kind: MeshService
+    name: backend
+  from:
+  - targetRef:
+      kind: MeshService
+      name: frontend
+---
+# Timeout Policy
+apiVersion: kuma.io/v1alpha1
+kind: MeshTimeout
+metadata:
+  name: backend-timeouts
+spec:
+  targetRef:
+    kind: MeshService
+    name: backend
+  to:
+  - targetRef:
+      kind: Mesh
+    default:
+      connectionTimeout: 5s
+      http:
+        requestTimeout: 10s
+---
+# Retry Policy
+apiVersion: kuma.io/v1alpha1
+kind: MeshRetry
+metadata:
+  name: backend-retries
+spec:
+  targetRef:
+    kind: MeshService
+    name: backend
+  to:
+  - targetRef:
+      kind: Mesh
+    default:
+      http:
+        numRetries: 3
+        perTryTimeout: 5s
+        retryOn:
+          - connect-failure
+          - gateway-error
+---
+# Circuit Breaker Policy
+apiVersion: kuma.io/v1alpha1
+kind: MeshCircuitBreaker
+metadata:
+  name: backend-circuit-breaker
+spec:
+  targetRef:
+    kind: MeshService
+    name: backend
+  to:
+  - targetRef:
+      kind: Mesh
+    default:
+      intervals:
+        - maxConnections: 100
+          maxPendingRequests: 50
+          maxRequests: 200
+          maxRetries: 3
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+      splitExternalAndLocalErrors: false
+---
+# Rate Limit Policy
+apiVersion: kuma.io/v1alpha1
+kind: MeshRateLimit
+metadata:
+  name: backend-rate-limit
+spec:
+  targetRef:
+    kind: MeshService
+    name: backend
+  from:
+  - targetRef:
+      kind: Mesh
+    default:
+      local:
+        http:
+          requests: 100
+          interval: 1s
+

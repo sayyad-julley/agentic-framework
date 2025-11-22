@@ -1,0 +1,25 @@
+import org.flywaydb.core.api.migration.BaseJavaMigration;
+import org.flywaydb.core.api.migration.Context;
+
+public class V${VERSION}__${Description} extends BaseJavaMigration {
+    @Override
+    public void migrate(Context context) throws Exception {
+        try (var connection = context.getConnection();
+             var statement = connection.createStatement()) {
+            
+            // Explicit transaction management recommended for data operations
+            connection.setAutoCommit(false);
+            try {
+                // JDBC operations with conditional logic
+                // Example: Mass data anonymization, complex transformations
+                statement.executeUpdate("${SQL_OPERATION}");
+                
+                connection.commit();
+            } catch (Exception e) {
+                connection.rollback();
+                throw e;
+            }
+        }
+    }
+}
+

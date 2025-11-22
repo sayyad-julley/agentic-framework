@@ -1,0 +1,15 @@
+# Universal Mode Policies
+# These can be applied directly with kumactl (no Kubernetes resources)
+
+# Enable mTLS on the default mesh
+apiVersion: kuma.io/v1alpha1
+kind: Mesh
+metadata:
+  name: default
+spec:
+  mtls:
+    backends:
+    - name: builtin
+      type: builtin
+    enabledBackend: builtin
+

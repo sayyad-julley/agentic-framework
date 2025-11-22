@@ -1,0 +1,18 @@
+# Pattern 2: Mesh with mTLS Enabled
+# mTLS is mandatory for cross-zone communication to establish identity context
+
+apiVersion: kuma.io/v1alpha1
+kind: Mesh
+metadata:
+  name: default
+spec:
+  # Enable mTLS for cross-zone communication
+  mtls:
+    backends:
+    - name: builtin
+      type: builtin
+    enabledBackend: builtin
+  # Enable reachable-services for large meshes (reduces XDS payload)
+  networking:
+    reachableServices: true
+

@@ -1,0 +1,17 @@
+package policy.multi_tenant
+
+deny[msg] {
+    input.user.tenant_id != input.resource.tenant_id
+    msg := "Cross-tenant access forbidden"
+}
+
+deny[msg] {
+    input.user.account_lockout_flag == true
+    msg := "Account is locked"
+}
+
+allow {
+    not deny
+    input.action == "read"
+}
+

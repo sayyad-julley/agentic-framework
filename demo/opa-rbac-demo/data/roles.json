@@ -1,0 +1,76 @@
+{
+  "roles_map": {
+    "permissions": {
+      "admin": [
+        "read",
+        "write",
+        "delete",
+        "manage_users",
+        "manage_roles",
+        "view_audit_logs"
+      ],
+      "manager": [
+        "read",
+        "write",
+        "view_reports"
+      ],
+      "developer": [
+        "read",
+        "write",
+        "deploy"
+      ],
+      "viewer": [
+        "read"
+      ],
+      "guest": [
+        "read_public"
+      ]
+    },
+    "resource_permissions": {
+      "admin": [
+        {
+          "action": "read",
+          "resource_type": "*",
+          "requires_ownership": false
+        },
+        {
+          "action": "write",
+          "resource_type": "*",
+          "requires_ownership": false
+        },
+        {
+          "action": "delete",
+          "resource_type": "*",
+          "requires_ownership": false
+        }
+      ],
+      "user": [
+        {
+          "action": "read",
+          "resource_type": "document",
+          "requires_ownership": true
+        },
+        {
+          "action": "write",
+          "resource_type": "document",
+          "requires_ownership": true
+        }
+      ]
+    }
+  },
+  "tenants": {
+    "tenant-1": {
+      "active": true,
+      "name": "Acme Corp"
+    },
+    "tenant-2": {
+      "active": true,
+      "name": "Tech Inc"
+    },
+    "tenant-3": {
+      "active": false,
+      "name": "Inactive Corp"
+    }
+  }
+}
+

@@ -1,0 +1,100 @@
+# Docker Compose for Local Kuma Testing Environment
+# This setup provides a minimal environment for testing Kuma patterns locally
+
+services:
+  # PostgreSQL for Universal mode persistent storage
+  postgres:
+    image: postgres:15-alpine
+    container_name: kuma-postgres
+    environment:
+      POSTGRES_DB: kuma
+      POSTGRES_USER: kuma
+      POSTGRES_PASSWORD: kuma
+    ports:
+      - "15432:5432"  # Use 15432 externally to avoid conflicts with existing PostgreSQL
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kuma"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Kuma Global Control Plane Migration (runs once to set up database)
+  kuma-global-cp-migrate:
+    image: kong/kuma-cp:2.12.4
+    container_name: kuma-global-cp-migrate
+    command: ["migrate", "up"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      KUMA_STORE_TYPE: "postgres"
+      KUMA_STORE_POSTGRES_HOST: "postgres"
+      KUMA_STORE_POSTGRES_PORT: "5432"
+      KUMA_STORE_POSTGRES_USER: "kuma"
+      KUMA_STORE_POSTGRES_PASSWORD: "kuma"
+      KUMA_STORE_POSTGRES_DB: "kuma"
+    restart: "no"
+  # Kuma Global Control Plane (Universal mode)
+  kuma-global-cp:
+    image: kong/kuma-cp:2.12.4
+    container_name: kuma-global-cp
+    command: ["run"]
+    ports:
+      - "5681:5681"  # GUI
+      - "5682:5682"  # API
+      - "5676:5676"  # Zone CP connections
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kuma-global-cp-migrate:
+        condition: service_completed_successfully
+    environment:
+      KUMA_MODE: "global"
+      KUMA_STORE_TYPE: "postgres"
+      KUMA_STORE_POSTGRES_HOST: "postgres"
+      KUMA_STORE_POSTGRES_PORT: "5432"
+      KUMA_STORE_POSTGRES_USER: "kuma"
+      KUMA_STORE_POSTGRES_PASSWORD: "kuma"
+      KUMA_STORE_POSTGRES_DB: "kuma"
+      KUMA_GENERAL_TLS_CP_SERVER_ENABLED: "false"  # Disable TLS for local testing
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:5681"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Kuma Zone Control Plane (Universal mode)
+  kuma-zone-cp:
+    image: kong/kuma-cp:2.12.4
+    container_name: kuma-zone-cp
+    command: ["run"]
+    ports:
+      - "5683:5681"  # GUI (different port to avoid conflict)
+      - "5684:5682"  # API (different port)
+      - "5679:5679"  # Data Plane connections
+    depends_on:
+      - kuma-global-cp
+    environment:
+      KUMA_MODE: "zone"
+      KUMA_STORE_TYPE: "memory"
+      KUMA_MULTI_ZONE_ZONE_NAME: "local-zone"
+      KUMA_MULTI_ZONE_GLOBAL_ADDRESS: "grpc://kuma-global-cp:5676"
+      KUMA_GENERAL_TLS_CP_SERVER_ENABLED: "false"  # Disable TLS for local testing
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:5681"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+
+# Usage:
+# 1. Start services: docker-compose up -d
+# 2. Access Global CP GUI: http://localhost:5681
+# 3. Access Zone CP GUI: http://localhost:5683
+# 4. Stop services: docker-compose down
+# 5. Clean volumes: docker-compose down -v
+

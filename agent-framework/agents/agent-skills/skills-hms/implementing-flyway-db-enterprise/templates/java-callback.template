@@ -1,0 +1,52 @@
+import org.flywaydb.core.api.callback.Callback;
+import org.flywaydb.core.api.callback.Context;
+import org.flywaydb.core.api.callback.Event;
+
+public class ${CallbackName} implements Callback {
+    @Override
+    public boolean supports(Event event, Context context) {
+        return event == Event.AFTER_MIGRATE 
+            || event == Event.AFTER_EACH_MIGRATE_ERROR
+            || event == Event.BEFORE_BASELINE
+            || event == Event.AFTER_CLEAN;
+    }
+    
+    @Override
+    public void handle(Event event, Context context) {
+        if (event == Event.AFTER_MIGRATE) {
+            // Flush distributed caches, trigger readiness probes
+            flushApplicationCaches();
+        } else if (event == Event.AFTER_EACH_MIGRATE_ERROR) {
+            // Publish alerts to monitoring systems
+            publishAlert("Migration failed: " + context.getMigrationInfo());
+        } else if (event == Event.BEFORE_BASELINE) {
+            // Pre-baseline validation
+            validateBaselinePrerequisites();
+        } else if (event == Event.AFTER_CLEAN) {
+            // Post-cleanup operations
+            performPostCleanup();
+        }
+    }
+    
+    @Override
+    public String getCallbackName() {
+        return "${CallbackName}";
+    }
+    
+    private void flushApplicationCaches() {
+        // Implementation: Flush distributed caches, trigger readiness probes
+    }
+    
+    private void publishAlert(String message) {
+        // Implementation: Publish to monitoring systems (Splunk, PagerDuty, etc.)
+    }
+    
+    private void validateBaselinePrerequisites() {
+        // Implementation: Validate prerequisites before baseline
+    }
+    
+    private void performPostCleanup() {
+        // Implementation: Post-cleanup operations
+    }
+}
+

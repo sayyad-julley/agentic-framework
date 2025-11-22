@@ -1,0 +1,10 @@
+package policy.abac
+
+default allow = false
+
+allow {
+    input.action == "delete"
+    input.security_level >= 5
+    input.mfa_active == true
+}
+

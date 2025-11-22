@@ -1,0 +1,25 @@
+[flyway]
+# Global defaults
+# H2 Database: file-based (persistent) or mem: (in-memory)
+default-schema = "PUBLIC"
+locations = ["classpath:db/migration/common"]
+
+[environments.dev]
+url = "jdbc:h2:file:./data/flyway_demo_dev"
+user = "sa"
+password = ""
+locations = ["classpath:db/migration/common", "classpath:db/migration/test_data"]
+
+[environments.staging]
+url = "jdbc:h2:file:./data/flyway_demo_stg"
+user = "sa"
+password = ""
+# Environment-specific location override to include seed data for testing
+locations = ["classpath:db/migration/common", "classpath:db/migration/seed_data"]
+
+[environments.production]
+url = "jdbc:h2:file:./data/flyway_demo_prod"
+user = "sa"
+password = ""
+locations = ["classpath:db/migration/common"]
+

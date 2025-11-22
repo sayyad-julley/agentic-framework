@@ -1,0 +1,8 @@
+package kubernetes.admission.labels
+
+violation[{"msg": msg, "details": {"label": mandatory_label}}] {
+    mandatory_label := "owner"
+    not input.review.object.metadata.labels[mandatory_label]
+    msg := sprintf("Deployment must contain required label: %v", [mandatory_label])
+}
+

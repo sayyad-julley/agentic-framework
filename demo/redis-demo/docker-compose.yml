@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: redis-demo
+    command: redis-server /usr/local/etc/redis/redis.conf
+    volumes:
+      - ./redis.conf:/usr/local/etc/redis/redis.conf:ro
+      - redis-data:/data
+    networks:
+      - internal
+    # No exposed ports - internal network only (security best practice)
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: redis-demo-app
+    depends_on:
+      - redis
+    networks:
+      - internal
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    restart: unless-stopped
+    volumes:
+      - ./src:/app/src
+
+volumes:
+  redis-data:
+    driver: local
+
+networks:
+  internal:
+    driver: bridge
+    internal: true  # Isolated network - no external access (security best practice)
+

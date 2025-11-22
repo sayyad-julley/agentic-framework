@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             xmlns:flowable="http://flowable.org/bpmn"
+             typeLanguage="http://www.w3.org/2001/XMLSchema"
+             expressionLanguage="http://www.w3.org/1999/XPath"
+             targetNamespace="http://www.flowable.org/processdef">
+
+  <process id="parallelJoinAsync" name="Parallel Join with Async Continuation" isExecutable="true">
+    
+    <startEvent id="start" name="Start"/>
+    
+    <!-- Parallel Gateway: Split -->
+    <parallelGateway id="parallelSplit" name="Split Tasks"/>
+    
+    <!-- Parallel Branch 1 -->
+    <sequenceFlow id="flowToTask1" sourceRef="start" targetRef="parallelSplit"/>
+    <sequenceFlow id="flowFromSplit1" sourceRef="parallelSplit" targetRef="task1"/>
+    
+    <serviceTask id="task1" 
+                 name="Parallel Task 1" 
+                 flowable:class="com.example.flowable.delegates.ParallelTask1Delegate"/>
+    
+    <!-- ✅ BEST PRACTICE: Async Marker Before Join -->
+    <!-- This prevents optimistic locking exceptions -->
+    <sequenceFlow id="flowToAsyncMarker1" sourceRef="task1" targetRef="asyncJoinMarker1"/>
+    
+    <serviceTask id="asyncJoinMarker1" 
+                 name="Async Join Boundary Trigger"
+                 flowable:async="true"
+                 flowable:class="com.example.flowable.delegates.AsyncJoinMarkerDelegate"/>
+    
+    <sequenceFlow id="flowFromAsync1" sourceRef="asyncJoinMarker1" targetRef="parallelJoin"/>
+    
+    <!-- Parallel Branch 2 -->
+    <sequenceFlow id="flowFromSplit2" sourceRef="parallelSplit" targetRef="task2"/>
+    
+    <serviceTask id="task2" 
+                 name="Parallel Task 2" 
+                 flowable:class="com.example.flowable.delegates.ParallelTask2Delegate"/>
+    
+    <!-- ✅ BEST PRACTICE: Async Marker Before Join -->
+    <sequenceFlow id="flowToAsyncMarker2" sourceRef="task2" targetRef="asyncJoinMarker2"/>
+    
+    <serviceTask id="asyncJoinMarker2" 
+                 name="Async Join Boundary Trigger"
+                 flowable:async="true"
+                 flowable:class="com.example.flowable.delegates.AsyncJoinMarkerDelegate"/>
+    
+    <sequenceFlow id="flowFromAsync2" sourceRef="asyncJoinMarker2" targetRef="parallelJoin"/>
+    
+    <!-- Parallel Gateway: Join -->
+    <parallelGateway id="parallelJoin" name="Join Results"/>
+    
+    <sequenceFlow id="flowToEnd" sourceRef="parallelJoin" targetRef="end"/>
+    
+    <endEvent id="end" name="End"/>
+    
+  </process>
+  
+</definitions>
+

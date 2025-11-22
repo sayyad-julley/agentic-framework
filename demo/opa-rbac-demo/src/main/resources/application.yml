@@ -1,0 +1,33 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: opa-rbac-demo
+  # Cache disabled temporarily - can be enabled with Caffeine dependency
+  # cache:
+  #   type: caffeine
+  #   caffeine:
+  #     spec: maximumSize=1000,expireAfterWrite=5m
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${JWT_ISSUER_URI:http://localhost:9000}
+          jwk-set-uri: ${JWT_JWK_SET_URI:http://localhost:9000/.well-known/jwks.json}
+
+# OPA Configuration
+opa:
+  url: ${OPA_URL:http://localhost:8181}
+  timeout: ${OPA_TIMEOUT:5000}
+  policy:
+    path: ${OPA_POLICY_PATH:policy.rbac.allow}
+  cache:
+    enabled: ${OPA_CACHE_ENABLED:true}
+
+logging:
+  level:
+    com.hms.oparbac: DEBUG
+    org.springframework.web: INFO
+    org.springframework.security: INFO
+

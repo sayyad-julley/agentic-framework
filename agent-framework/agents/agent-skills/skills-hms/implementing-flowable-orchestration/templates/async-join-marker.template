@@ -1,0 +1,59 @@
+<!-- Asynchronous Continuation Workaround: Prevent Optimistic Locking at Parallel Joins -->
+<!-- Add async marker Service Task immediately before join gateway -->
+
+<process id="parallelProcessExample">
+  <startEvent id="start"/>
+  
+  <!-- Parallel Gateway: Split -->
+  <parallelGateway id="parallelSplit" name="Split Tasks"/>
+  
+  <!-- Parallel Branch 1 -->
+  <serviceTask id="task1" name="Task 1" flowable:class="com.example.Task1Delegate"/>
+  
+  <!-- Parallel Branch 2 -->
+  <serviceTask id="task2" name="Task 2" flowable:class="com.example.Task2Delegate"/>
+  
+  <!-- CRITICAL: Async Marker Before Join -->
+  <!-- This prevents optimistic locking exceptions -->
+  <sequenceFlow id="flowToAsyncMarker1" sourceRef="task1" targetRef="asyncJoinMarker1"/>
+  <sequenceFlow id="flowToAsyncMarker2" sourceRef="task2" targetRef="asyncJoinMarker2"/>
+  
+  <serviceTask id="asyncJoinMarker1" 
+               name="Async Join Boundary Trigger"
+               flowable:async="true"
+               flowable:class="org.flowable.engine.impl.bpmn.delegate.logger.AsyncLoggerDelegate"/>
+  
+  <serviceTask id="asyncJoinMarker2" 
+               name="Async Join Boundary Trigger"
+               flowable:async="true"
+               flowable:class="org.flowable.engine.impl.bpmn.delegate.logger.AsyncLoggerDelegate"/>
+  
+  <!-- Connect async markers to join gateway -->
+  <sequenceFlow id="flowFromAsync1" sourceRef="asyncJoinMarker1" targetRef="parallelJoin"/>
+  <sequenceFlow id="flowFromAsync2" sourceRef="asyncJoinMarker2" targetRef="parallelJoin"/>
+  
+  <!-- Parallel Gateway: Join -->
+  <parallelGateway id="parallelJoin" name="Join Results"/>
+  
+  <endEvent id="end"/>
+</process>
+
+<!-- Alternative: Simple Async Marker Pattern -->
+<!--
+<sequenceFlow id="flowToAsync" sourceRef="branchEndTask" targetRef="asyncJoinMarker"/>
+<serviceTask id="asyncJoinMarker" 
+             name="Async Join Boundary Trigger"
+             flowable:async="true"
+             flowable:class="org.flowable.engine.impl.bpmn.delegate.logger.AsyncLoggerDelegate"/>
+<sequenceFlow id="flowFromAsync" sourceRef="asyncJoinMarker" targetRef="parallelJoin"/>
+<parallelGateway id="parallelJoin" name="Join Results"/>
+-->
+
+<!-- Anti-Pattern: Synchronous Join (DO NOT DO THIS) -->
+<!--
+<sequenceFlow id="flowDirect" sourceRef="task1" targetRef="parallelJoin"/>
+<sequenceFlow id="flowDirect2" sourceRef="task2" targetRef="parallelJoin"/>
+<parallelGateway id="parallelJoin" name="Join Results"/>
+<!-- This causes FlowableOptimisticLockingException under load -->
+-->
+

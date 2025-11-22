@@ -1,0 +1,25 @@
+# Pattern 4: Zone-Level Policy Override
+# Zone-level overrides via kuma.io/origin: zone label
+# Zone policies override global policies
+
+apiVersion: kuma.io/v1alpha1
+kind: MeshTimeout
+metadata:
+  name: zone-specific-timeout
+  labels:
+    kuma.io/origin: zone  # Zone overrides global
+    kuma.io/zone: us-east
+    kuma.io/mesh: default
+spec:
+  targetRef:
+    kind: MeshService
+    name: orders-service
+  to:
+  - targetRef:
+      kind: MeshService
+      name: inventory-service
+    default:
+      connectionTimeout: 3s  # Zone-specific: shorter timeout for local services
+      http:
+        requestTimeout: 10s
+

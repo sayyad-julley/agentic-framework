@@ -1,0 +1,16 @@
+# Quarkus Extension Integration
+
+# Add Flyway extension via Quarkus CLI
+./mvnw quarkus:add-extension -Dextensions="io.quarkus:quarkus-flyway"
+
+# Or add manually to pom.xml
+<dependency>
+    <groupId>io.quarkus</groupId>
+    <artifactId>quarkus-flyway</artifactId>
+</dependency>
+
+# Configuration in application.properties
+quarkus.flyway.migrate-at-start=true
+quarkus.flyway.locations=db/migration/common
+quarkus.flyway.baseline-on-migrate=false
+

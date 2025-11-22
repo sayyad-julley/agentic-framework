@@ -1,0 +1,21 @@
+# Platform default timeout policy
+apiVersion: kuma.io/v1alpha1
+kind: MeshTimeout
+metadata:
+  name: platform-default-timeouts
+  mesh: default
+  labels:
+    kuma.io/policy-role: system
+spec:
+  targetRef:
+    kind: Mesh
+  to:
+  - targetRef:
+      kind: Mesh
+    default:
+      connectionTimeout: 5s
+      idleTimeout: 30m
+      http:
+        requestTimeout: 15s
+        streamIdleTimeout: 30m
+

@@ -1,0 +1,61 @@
+---
+title: Quickstart
+description: Get started with HMS Stack in minutes
+---
+
+# Quickstart
+
+Get up and running with HMS Stack in just a few steps.
+
+## Prerequisites
+
+Before you begin, ensure you have:
+
+- **Node.js** 18+ installed
+- **Java** 17+ installed (for backend services)
+- **Maven** 3.6+ installed
+- **Git** installed
+
+## Installation
+
+### 1. Clone the Repository
+
+```bash
+git clone https://github.com/your-org/hms-stack.git
+cd hms-stack
+```
+
+### 2. Install Frontend Dependencies
+
+For the activity demo:
+
+```bash
+cd activity-demo
+npm install
+```
+
+### 3. Run Backend Services
+
+For the auth BFF service:
+
+```bash
+cd hms-auth-bff
+mvn clean install
+mvn spring-boot:run
+```
+
+### 4. Start Development Server
+
+```bash
+cd activity-demo
+npm run dev
+```
+
+The application will be available at `http://localhost:4001`.
+
+## Next Steps
+
+- Explore the documentation to learn more about the system
+- Check out the architecture guide for system design details
+- Review service documentation for backend services
+

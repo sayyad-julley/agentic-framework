@@ -1,0 +1,29 @@
+services:
+  opa:
+    image: openpolicyagent/opa:latest
+    container_name: opa-server
+    ports:
+      - "8181:8181"
+    command:
+      - "run"
+      - "--server"
+      - "--addr=0.0.0.0:8181"
+      - "--log-level=info"
+      - "--set=decision_logs.console=true"
+    healthcheck:
+      test: ["CMD", "opa", "eval", "-i", "{}", "true"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Optional: OPA Bundle Server for production
+  opa-bundle-server:
+    image: nginx:alpine
+    container_name: opa-bundle-server
+    ports:
+      - "8081:80"
+    volumes:
+      - ./bundles:/usr/share/nginx/html:ro
+    profiles:
+      - bundle-server
+

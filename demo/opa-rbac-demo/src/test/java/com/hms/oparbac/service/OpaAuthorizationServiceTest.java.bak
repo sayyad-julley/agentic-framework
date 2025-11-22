@@ -1,0 +1,179 @@
+package com.hms.oparbac.service;
+
+import com.hms.oparbac.dto.OpaRequest;
+import com.hms.oparbac.dto.OpaResponse;
+import com.hms.oparbac.exception.AuthorizationException;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
+import reactor.core.publisher.Mono;
+
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+
+/**
+ * Unit tests for OpaAuthorizationService
+ */
+@ExtendWith(MockitoExtension.class)
+class OpaAuthorizationServiceTest {
+
+    @Mock
+    private WebClient opaWebClient;
+
+    @Mock
+    private WebClient.RequestBodyUriSpec requestBodyUriSpec;
+
+    @Mock
+    private WebClient.RequestBodySpec requestBodySpec;
+
+    @Mock
+    private WebClient.ResponseSpec responseSpec;
+
+    @InjectMocks
+    private OpaAuthorizationService opaAuthorizationService;
+
+    @BeforeEach
+    void setUp() {
+        ReflectionTestUtils.setField(opaAuthorizationService, "policyPath", "policy.rbac.allow");
+        ReflectionTestUtils.setField(opaAuthorizationService, "cacheEnabled", false);
+    }
+
+    @Test
+    void testIsAuthorized_Allowed() {
+        // Given
+        OpaRequest request = OpaRequest.builder()
+                .userId("user123")
+                .roles(List.of("admin"))
+                .action("read")
+                .build();
+
+        OpaResponse response = OpaResponse.builder()
+                .result(OpaResponse.Result.builder()
+                        .allow(true)
+                        .build())
+                .build();
+
+        when(opaWebClient.post()).thenReturn(requestBodyUriSpec);
+        when(requestBodyUriSpec.uri(anyString(), anyString())).thenReturn(requestBodySpec);
+        when(requestBodySpec.bodyValue(any())).thenReturn(requestBodySpec);
+        when(requestBodySpec.retrieve()).thenReturn(responseSpec);
+        when(responseSpec.bodyToMono(OpaResponse.class)).thenReturn(Mono.just(response));
+
+        // When
+        boolean result = opaAuthorizationService.isAuthorized(request);
+
+        // Then
+        assertTrue(result);
+        verify(opaWebClient).post();
+    }
+
+    @Test
+    void testIsAuthorized_Denied() {
+        // Given
+        OpaRequest request = OpaRequest.builder()
+                .userId("user123")
+                .roles(List.of("viewer"))
+                .action("write")
+                .build();
+
+        OpaResponse response = OpaResponse.builder()
+                .result(OpaResponse.Result.builder()
+                        .allow(false)
+                        .deny(List.of("User not authorized"))
+                        .build())
+                .build();
+
+        when(opaWebClient.post()).thenReturn(requestBodyUriSpec);
+        when(requestBodyUriSpec.uri(anyString(), anyString())).thenReturn(requestBodySpec);
+        when(requestBodySpec.bodyValue(any())).thenReturn(requestBodySpec);
+        when(requestBodySpec.retrieve()).thenReturn(responseSpec);
+        when(responseSpec.bodyToMono(OpaResponse.class)).thenReturn(Mono.just(response));
+
+        // When
+        boolean result = opaAuthorizationService.isAuthorized(request);
+
+        // Then
+        assertFalse(result);
+    }
+
+    @Test
+    void testIsAuthorized_NullResponse() {
+        // Given
+        OpaRequest request = OpaRequest.builder()
+                .userId("user123")
+                .roles(List.of("admin"))
+                .action("read")
+                .build();
+
+        when(opaWebClient.post()).thenReturn(requestBodyUriSpec);
+        when(requestBodyUriSpec.uri(anyString(), anyString())).thenReturn(requestBodySpec);
+        when(requestBodySpec.bodyValue(any())).thenReturn(requestBodySpec);
+        when(requestBodySpec.retrieve()).thenReturn(responseSpec);
+        when(responseSpec.bodyToMono(OpaResponse.class)).thenReturn(Mono.just(null));
+
+        // When
+        boolean result = opaAuthorizationService.isAuthorized(request);
+
+        // Then
+        assertFalse(result);
+    }
+
+    @Test
+    void testIsAuthorized_WebClientException() {
+        // Given
+        OpaRequest request = OpaRequest.builder()
+                .userId("user123")
+                .roles(List.of("admin"))
+                .action("read")
+                .build();
+
+        when(opaWebClient.post()).thenReturn(requestBodyUriSpec);
+        when(requestBodyUriSpec.uri(anyString(), anyString())).thenReturn(requestBodySpec);
+        when(requestBodySpec.bodyValue(any())).thenReturn(requestBodySpec);
+        when(requestBodySpec.retrieve()).thenReturn(responseSpec);
+        when(responseSpec.bodyToMono(OpaResponse.class))
+                .thenReturn(Mono.error(WebClientResponseException.create(500, "Internal Server Error", null, null, null)));
+
+        // When/Then
+        assertThrows(AuthorizationException.class, () -> {
+            opaAuthorizationService.isAuthorized(request);
+        });
+    }
+
+    @Test
+    void testGetUserPermissions() {
+        // Given
+        String userId = "user123";
+        List<String> roles = List.of("admin");
+
+        OpaResponse response = OpaResponse.builder()
+                .result(OpaResponse.Result.builder()
+                        .userPermissions(List.of("read", "write", "delete"))
+                        .build())
+                .build();
+
+        when(opaWebClient.post()).thenReturn(requestBodyUriSpec);
+        when(requestBodyUriSpec.uri(anyString(), anyString())).thenReturn(requestBodySpec);
+        when(requestBodySpec.bodyValue(any())).thenReturn(requestBodySpec);
+        when(requestBodySpec.retrieve()).thenReturn(responseSpec);
+        when(responseSpec.bodyToMono(OpaResponse.class)).thenReturn(Mono.just(response));
+
+        // When
+        List<String> permissions = opaAuthorizationService.getUserPermissions(userId, roles);
+
+        // Then
+        assertNotNull(permissions);
+        assertEquals(3, permissions.size());
+        assertTrue(permissions.contains("read"));
+    }
+}
+

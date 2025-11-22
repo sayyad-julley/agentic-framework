@@ -1,0 +1,26 @@
+---
+title: Get User by ID
+description: Retrieve a specific user by their ID
+openapi: openapi.yaml
+api: GET /users/{id}
+---
+
+# Get User by ID
+
+Retrieve detailed information about a specific user.
+
+<APIPlayground />
+
+## Parameters
+
+- **id** (path, required): The unique identifier of the user
+
+## Response
+
+Returns a user object with the following properties:
+
+- `id`: User identifier
+- `name`: User's full name
+- `email`: User's email address
+- `createdAt`: Account creation timestamp
+

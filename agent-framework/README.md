@@ -35,11 +35,13 @@ agent-framework/
 ### 2. How It Works
 
 1. **LLM Discovers Agents**: Reads `agents/*/agent.md` files
-2. **Semantic Matching**: Matches user queries to agents using semantic keywords
-3. **Sub-Agent Selection**: Selects appropriate sub-agents based on query intent
-4. **Pattern Detection**: Uses skills (like pattern-matcher) to detect patterns
-5. **Documentation Fetching**: Fetches relevant docs via Context7 when needed
-6. **Fix Application**: Applies fixes based on markdown instructions
+2. **Query Intent Detection**: Determines if query is reactive (fix) or proactive (create)
+3. **Flow Selection**: Routes to Reactive Flow or Proactive Flow based on intent
+4. **Semantic Matching**: Matches user queries to agents using semantic keywords
+5. **Sub-Agent Selection**: Selects appropriate sub-agents based on query intent
+6. **Pattern Detection**: Uses skills (like pattern-matcher) to detect patterns
+7. **Documentation Fetching**: Fetches relevant docs via Context7 when needed
+8. **Fix Application**: Applies fixes based on markdown instructions
 
 ### 3. Creating Your First Agent
 
@@ -97,6 +99,28 @@ To use a skill in a sub-agent:
 1. Read the skill's markdown file from `skills/`
 2. Follow the usage instructions
 3. Call the skill with appropriate parameters
+
+## Operation Modes: Two Separate Flows
+
+The framework supports two independent flows:
+
+### Reactive Flow (Fix Existing Issues)
+- **Trigger**: User asks to fix/solve/resolve an issue
+- **Workflow**: Query → Agent Matching → Pattern Detection → Fix Application
+- **Purpose**: Fix problems that already exist in codebase
+- **Example**: "Fix hydration error" → Activates hydration-agent → Fixes issue
+
+### Proactive Flow (Prevent Issues During Implementation)
+- **Trigger**: User creates/builds/implements new code
+- **Workflow**: File Detection → Agent Activation → **Real-Time Code Checking During Generation** → Immediate Fixes
+- **Purpose**: Prevent issues during code creation by using agents/sub-agents/skills DURING code generation (interleaved)
+- **Example**: "Create todo-app" → Activates agents → **Checks each code chunk during generation** → Applies fixes immediately before continuing
+
+### Flow Selection
+The framework automatically detects query intent and routes to the appropriate flow:
+- Implementation keywords (create, build, implement) → Proactive Flow
+- Fix keywords (fix, solve, error, bug) → Reactive Flow
+- Both keywords present → Both flows executed sequentially
 
 ## Example Agents
 

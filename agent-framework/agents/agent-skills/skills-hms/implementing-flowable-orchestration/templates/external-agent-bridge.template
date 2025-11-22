@@ -1,0 +1,53 @@
+<!-- External Agent Bridge Pattern: AI Service Bus Integration -->
+<!-- External Agent Configuration (Flowable Control/Design) -->
+
+{
+  "agentType": "external",
+  "name": "AzureAIClassifier",
+  "platform": "azure-ai-foundry",
+  "endpoint": "${AZURE_AI_ENDPOINT}",
+  "authentication": {
+    "type": "oauth2",
+    "clientId": "${SECRET:azure-ai-client-id}",
+    "clientSecret": "${SECRET:azure-ai-client-secret}"
+  },
+  "capabilities": [
+    "document-classification",
+    "risk-assessment",
+    "content-analysis"
+  ]
+}
+
+<!-- BPMN Service Task Integration -->
+<!--
+<serviceTask id="classifyDocument" 
+             name="Classify Document with AI"
+             flowable:type="external-agent"
+             flowable:agentRef="AzureAIClassifier">
+  <extensionElements>
+    <flowable:field name="documentId">
+      <flowable:expression>${documentId}</flowable:expression>
+    </flowable:field>
+    <flowable:field name="documentContent">
+      <flowable:expression>${documentContent}</flowable:expression>
+    </flowable:field>
+  </extensionElements>
+</serviceTask>
+-->
+
+<!-- Alternative: AWS Bedrock Configuration -->
+<!--
+{
+  "agentType": "external",
+  "name": "AWSBedrockAnalyzer",
+  "platform": "aws-bedrock",
+  "region": "us-east-1",
+  "modelId": "anthropic.claude-v2",
+  "authentication": {
+    "type": "aws-iam",
+    "accessKeyId": "${SECRET:aws-access-key-id}",
+    "secretAccessKey": "${SECRET:aws-secret-access-key}"
+  }
+}
+-->
+

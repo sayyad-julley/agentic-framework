@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+                           http://www.springframework.org/schema/beans/spring-beans.xsd">
+
+    <!-- Flowable Process Engine Configuration -->
+    <bean id="processEngineConfiguration" class="org.flowable.engine.impl.cfg.StandaloneProcessEngineConfiguration">
+        <!-- Database Configuration -->
+        <property name="jdbcUrl" value="jdbc:h2:mem:flowable;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE"/>
+        <property name="jdbcDriver" value="org.h2.Driver"/>
+        <property name="jdbcUsername" value="sa"/>
+        <property name="jdbcPassword" value=""/>
+
+        <!-- Database Schema Management -->
+        <property name="databaseSchemaUpdate" value="true"/>
+
+        <!-- Job Executor Configuration (Best Practice: Proper Pool Sizing) -->
+        <property name="asyncExecutorActivate" value="true"/>
+        <property name="asyncExecutorCorePoolSize" value="10"/>
+        <property name="asyncExecutorMaxPoolSize" value="20"/>
+        <property name="asyncExecutorQueueCapacity" value="100"/>
+        <property name="asyncExecutorKeepAlive" value="60"/>
+
+        <!-- Process Definition Deployment -->
+        <property name="deploymentResources">
+            <list>
+                <value>classpath*:/processes/*.bpmn20.xml</value>
+            </list>
+        </property>
+    </bean>
+
+    <!-- Process Engine -->
+    <bean id="processEngine" class="org.flowable.engine.ProcessEngines" factory-method="getDefaultProcessEngine"/>
+
+</beans>
+

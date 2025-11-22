@@ -1,0 +1,75 @@
+# Pattern 1: Zone Control Plane Configuration
+# Zone CP is execution layer managing local Data Planes
+# Receives policy updates from Global CP
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kuma-system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kuma-zone-control-plane
+  namespace: kuma-system
+  labels:
+    app: kuma-zone-control-plane
+spec:
+  replicas: 3  # Odd number for quorum
+  selector:
+    matchLabels:
+      app: kuma-zone-control-plane
+  template:
+    metadata:
+      labels:
+        app: kuma-zone-control-plane
+    spec:
+      containers:
+      - name: kuma-cp
+        image: kong/kuma-cp:2.6.0
+        ports:
+        - containerPort: 5681  # GUI
+        - containerPort: 5682  # API
+        - containerPort: 5679  # Data Plane connections
+        env:
+        - name: KUMA_MODE
+          value: "zone"
+        - name: KUMA_MULTI_ZONE_ZONE_NAME
+          value: "us-east"  # Zone name (change per zone)
+        - name: KUMA_MULTI_ZONE_GLOBAL_ADDRESS
+          value: "grpcs://kuma-global-control-plane.kuma-global-system:5676"
+        - name: KUMA_STORE_TYPE
+          value: "kubernetes"
+        - name: KUMA_RUNTIME_KUBERNETES_INJECTOR_CNI_ENABLED
+          value: "false"
+        # Zone CP accepts Data Plane connections
+        - name: KUMA_GENERAL_TLS_CP_SERVER_ENABLED
+          value: "true"
+        resources:
+          requests:
+            cpu: 4
+            memory: 2Gi
+          limits:
+            cpu: 8
+            memory: 4Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kuma-zone-control-plane
+  namespace: kuma-system
+spec:
+  selector:
+    app: kuma-zone-control-plane
+  ports:
+  - name: api
+    port: 5682
+    targetPort: 5682
+  - name: dataplane
+    port: 5679
+    targetPort: 5679
+  - name: gui
+    port: 5681
+    targetPort: 5681
+  type: ClusterIP
+

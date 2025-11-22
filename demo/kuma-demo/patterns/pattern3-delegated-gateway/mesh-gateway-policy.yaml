@@ -1,0 +1,58 @@
+# Pattern 3: Mesh Gateway Policy
+# Policies for external traffic through Kong gateway
+
+apiVersion: kuma.io/v1alpha1
+kind: MeshGateway
+metadata:
+  name: kong-gateway
+  namespace: kuma-system
+spec:
+  selectors:
+  - match:
+      kuma.io/service: kong-gateway
+  conf:
+    listeners:
+    - port: 8000
+      protocol: HTTP
+      hostname: api.example.com
+      tags:
+        protocol: http
+    - port: 8443
+      protocol: HTTPS
+      hostname: api.example.com
+      tls:
+        mode: Terminate
+      tags:
+        protocol: https
+---
+# Traffic Permission for gateway
+apiVersion: kuma.io/v1alpha1
+kind: MeshTrafficPermission
+metadata:
+  name: allow-gateway-traffic
+spec:
+  targetRef:
+    kind: MeshGateway
+    name: kong-gateway
+  from:
+  - targetRef:
+      kind: Mesh
+---
+# Rate limiting policy for gateway (example)
+apiVersion: kuma.io/v1alpha1
+kind: MeshRateLimit
+metadata:
+  name: gateway-rate-limit
+spec:
+  targetRef:
+    kind: MeshGateway
+    name: kong-gateway
+  from:
+  - targetRef:
+      kind: Mesh
+    default:
+      local:
+        http:
+          requests: 100
+          interval: 1s
+

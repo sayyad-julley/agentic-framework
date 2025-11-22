@@ -1,0 +1,46 @@
+<!-- Saga Orchestration Pattern: Flowable as Saga Orchestrator -->
+<!-- Service Task with Boundary Error Event and Compensation Flow -->
+
+<process id="sagaOrchestrationExample">
+  <startEvent id="start"/>
+  
+  <!-- Service Task: Call Microservice -->
+  <serviceTask id="callMicroservice" 
+               name="Call Payment Service"
+               flowable:class="com.example.PaymentServiceDelegate">
+    <!-- Boundary Error Event: Captures failures -->
+    <boundaryEvent id="serviceError" attachedToRef="callMicroservice">
+      <errorEventDefinition errorRef="serviceFailed"/>
+    </boundaryEvent>
+  </serviceTask>
+  
+  <!-- Compensation Handler: Reverses changes -->
+  <serviceTask id="compensateService" 
+               name="Compensate Payment"
+               flowable:isForCompensation="true"
+               flowable:class="com.example.CompensationDelegate"/>
+  
+  <!-- Error Sequence Flow: Triggers compensation -->
+  <sequenceFlow id="errorFlow" sourceRef="serviceError" targetRef="compensateService"/>
+  
+  <endEvent id="end"/>
+</process>
+
+<!-- Java Delegate Example -->
+<!--
+public class PaymentServiceDelegate implements JavaDelegate {
+  @Override
+  public void execute(DelegateExecution execution) {
+    String orderId = (String) execution.getVariable("orderId");
+    // Call payment microservice
+    PaymentResponse response = paymentClient.process(orderId);
+    
+    if (response.getStatus() != 200) {
+      throw new BpmnError("serviceFailed", "Payment service failed");
+    }
+    
+    execution.setVariable("paymentId", response.getPaymentId());
+  }
+}
+-->
+

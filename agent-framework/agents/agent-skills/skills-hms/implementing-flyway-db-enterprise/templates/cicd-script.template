@@ -1,0 +1,67 @@
+#!/bin/bash
+# Flyway CI/CD Pipeline Script (Validation-First Approach)
+# Usage: ./flyway-deploy.sh <environment>
+
+set -e
+
+ENVIRONMENT=${1:-staging}
+FLYWAY_CLI=${FLYWAY_CLI:-/flyway/flyway}
+DB_URL="jdbc:postgresql://${DB_HOST}:5432/${DB_NAME}"
+FLYWAY_USER="${DB_MIGRATION_USER}"
+FLYWAY_PASS="${DB_MIGRATION_PASSWORD}"
+
+echo "=== Flyway Deployment Pipeline: ${ENVIRONMENT} ==="
+
+# Step 1: Pre-Flight Check (testConnection - Flyway 11.x)
+echo "Step 1: Testing database connectivity..."
+${FLYWAY_CLI} -url=${DB_URL} -user=${FLYWAY_USER} -password=${FLYWAY_PASS} testConnection
+if [ $? -ne 0 ]; then
+  echo "ERROR: Database connectivity test failed"
+  exit 1
+fi
+
+# Step 2: Quality Gate - Code Analysis (SQLFluff - Flyway 11.x)
+echo "Step 2: Running code analysis..."
+${FLYWAY_CLI} -url=${DB_URL} -user=${FLYWAY_USER} -password=${FLYWAY_PASS} \
+  -codeAnalysis.enabled=true \
+  -codeAnalysis.scope=all \
+  analyze
+if [ $? -ne 0 ]; then
+  echo "ERROR: Code analysis failed - policy violations detected"
+  exit 1
+fi
+
+# Step 3: Validation (validate - checksum verification)
+echo "Step 3: Validating migration scripts..."
+${FLYWAY_CLI} -url=${DB_URL} -user=${FLYWAY_USER} -password=${FLYWAY_PASS} validate
+if [ $? -ne 0 ]; then
+  echo "ERROR: Migration validation failed (checksum mismatch or out-of-order)"
+  exit 1
+fi
+
+# Step 4: Drift Check (check --drift - staging/production only)
+if [ "$ENVIRONMENT" = "staging" ] || [ "$ENVIRONMENT" = "production" ]; then
+  echo "Step 4: Checking for schema drift..."
+  ${FLYWAY_CLI} -url=${DB_URL} -user=${FLYWAY_USER} -password=${FLYWAY_PASS} check --drift
+  if [ $? -ne 0 ]; then
+    echo "ERROR: Schema drift detected - unauthorized changes found"
+    exit 1
+  fi
+fi
+
+# Step 5: Migration Deployment (migrate)
+echo "Step 5: Executing database migrations..."
+${FLYWAY_CLI} -url=${DB_URL} -user=${FLYWAY_USER} -password=${FLYWAY_PASS} migrate
+if [ $? -ne 0 ]; then
+  echo "ERROR: Migration execution failed"
+  exit 1
+fi
+
+# Step 6: Snapshot Capture (optional - for drift detection in future deployments)
+if [ "$ENVIRONMENT" = "staging" ] || [ "$ENVIRONMENT" = "production" ]; then
+  echo "Step 6: Capturing schema snapshot..."
+  ${FLYWAY_CLI} -url=${DB_URL} -user=${FLYWAY_USER} -password=${FLYWAY_PASS} snapshot
+fi
+
+echo "=== Migration completed successfully ==="
+

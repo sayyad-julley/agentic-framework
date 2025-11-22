@@ -1,0 +1,10 @@
+package policy.rbac
+
+default allow = false
+
+allow {
+    user_role := input.roles[_]
+    allowed_actions := data.roles_map.permissions[user_role]
+    allowed_actions[_] == input.action
+}
+

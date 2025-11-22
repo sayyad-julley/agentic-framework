@@ -1,0 +1,96 @@
+# Multi-Zone Deployment Example
+# Demonstrates services deployed across multiple zones
+
+apiVersion: kuma.io/v1alpha1
+kind: Mesh
+metadata:
+  name: default
+spec:
+  mtls:
+    backends:
+    - name: builtin
+      type: builtin
+    enabledBackend: builtin
+---
+# Service in Zone 1 (us-east)
+apiVersion: v1
+kind: Service
+metadata:
+  name: orders-service
+  namespace: default
+  labels:
+    kuma.io/service: orders
+    kuma.io/zone: us-east
+spec:
+  selector:
+    app: orders
+  ports:
+  - port: 8080
+    targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orders-service
+  namespace: default
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: orders
+  template:
+    metadata:
+      labels:
+        app: orders
+        kuma.io/service: orders
+        kuma.io/zone: us-east
+      annotations:
+        kuma.io/sidecar-injection: enabled
+    spec:
+      containers:
+      - name: orders
+        image: nginx:alpine
+        ports:
+        - containerPort: 8080
+---
+# Service in Zone 2 (eu-west)
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-service
+  namespace: default
+  labels:
+    kuma.io/service: payment
+    kuma.io/zone: eu-west
+spec:
+  selector:
+    app: payment
+  ports:
+  - port: 8080
+    targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-service
+  namespace: default
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: payment
+  template:
+    metadata:
+      labels:
+        app: payment
+        kuma.io/service: payment
+        kuma.io/zone: eu-west
+      annotations:
+        kuma.io/sidecar-injection: enabled
+    spec:
+      containers:
+      - name: payment
+        image: nginx:alpine
+        ports:
+        - containerPort: 8080
+

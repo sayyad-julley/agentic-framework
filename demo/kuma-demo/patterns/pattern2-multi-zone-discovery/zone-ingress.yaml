@@ -1,0 +1,32 @@
+# Pattern 2: Zone Ingress Configuration
+# Zone Ingress proxies handle cross-zone traffic routing
+
+apiVersion: kuma.io/v1alpha1
+kind: ZoneIngress
+metadata:
+  name: zone-ingress-us-east
+  namespace: kuma-system
+  labels:
+    kuma.io/zone: us-east
+spec:
+  networking:
+    address: 10.0.1.100
+    port: 10001
+    advertisedAddress: zone-ingress-us-east.kuma-system.svc.cluster.local
+    advertisedPort: 10001
+---
+# Zone Ingress for second zone (example)
+apiVersion: kuma.io/v1alpha1
+kind: ZoneIngress
+metadata:
+  name: zone-ingress-eu-west
+  namespace: kuma-system
+  labels:
+    kuma.io/zone: eu-west
+spec:
+  networking:
+    address: 10.0.2.100
+    port: 10001
+    advertisedAddress: zone-ingress-eu-west.kuma-system.svc.cluster.local
+    advertisedPort: 10001
+

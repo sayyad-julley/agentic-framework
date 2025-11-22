@@ -1,0 +1,104 @@
+# Demo Policies to Show in Mesh Inspection
+
+# Traffic Permission Policy
+apiVersion: kuma.io/v1alpha1
+kind: MeshTrafficPermission
+metadata:
+  name: allow-all-traffic
+  mesh: default
+spec:
+  targetRef:
+    kind: Mesh
+  from:
+  - targetRef:
+      kind: Mesh
+
+---
+# Timeout Policy
+apiVersion: kuma.io/v1alpha1
+kind: MeshTimeout
+metadata:
+  name: demo-timeout-policy
+  mesh: default
+  labels:
+    kuma.io/policy-role: system
+spec:
+  targetRef:
+    kind: Mesh
+  to:
+  - targetRef:
+      kind: Mesh
+    default:
+      connectionTimeout: 5s
+      idleTimeout: 30m
+      http:
+        requestTimeout: 15s
+        streamIdleTimeout: 30m
+
+---
+# Retry Policy
+apiVersion: kuma.io/v1alpha1
+kind: MeshRetry
+metadata:
+  name: demo-retry-policy
+  mesh: default
+spec:
+  targetRef:
+    kind: Mesh
+  to:
+  - targetRef:
+      kind: Mesh
+    default:
+      http:
+        numRetries: 3
+        perTryTimeout: 5s
+        backOff:
+          baseInterval: 0.1s
+          maxInterval: 3s
+        retryOn:
+          - connect-failure
+          - refused-stream
+          - gateway-error
+          - reset
+
+---
+# Circuit Breaker Policy
+apiVersion: kuma.io/v1alpha1
+kind: MeshCircuitBreaker
+metadata:
+  name: demo-circuit-breaker
+  mesh: default
+spec:
+  targetRef:
+    kind: Mesh
+  to:
+  - targetRef:
+      kind: Mesh
+    default:
+      intervals:
+        - maxConnections: 100
+          maxPendingRequests: 50
+          maxRequests: 200
+          maxRetries: 3
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+
+---
+# Rate Limit Policy
+apiVersion: kuma.io/v1alpha1
+kind: MeshRateLimit
+metadata:
+  name: demo-rate-limit
+  mesh: default
+spec:
+  targetRef:
+    kind: Mesh
+  from:
+  - targetRef:
+      kind: Mesh
+    default:
+      local:
+        http:
+          requests: 100
+          interval: 1s
+

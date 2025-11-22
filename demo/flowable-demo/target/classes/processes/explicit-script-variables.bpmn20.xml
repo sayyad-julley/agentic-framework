@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             xmlns:flowable="http://flowable.org/bpmn"
+             typeLanguage="http://www.w3.org/2001/XMLSchema"
+             expressionLanguage="http://www.w3.org/1999/XPath"
+             targetNamespace="http://www.flowable.org/processdef">
+
+  <process id="explicitScriptVariables" name="Explicit Script Variable Assignment" isExecutable="true">
+    
+    <startEvent id="start" name="Start"/>
+    
+    <sequenceFlow id="flow1" sourceRef="start" targetRef="processData"/>
+    
+    <!-- ✅ BEST PRACTICE: Explicit Script Variable Assignment -->
+    <!-- flowable:autoStoreVariables="false" prevents implicit variable assignment -->
+    <!-- All variables must be explicitly set using execution.setVariable() -->
+    <!-- Using JUEL (Java Unified Expression Language) - natively supported by Flowable -->
+    <scriptTask id="processData" 
+                name="Process Data with Explicit Variables"
+                flowable:autoStoreVariables="false"
+                scriptFormat="juel">
+      <script>
+        <![CDATA[
+          // Get input data
+          var inputData = execution.getVariable("inputData");
+          
+          // Process data (example calculation)
+          var result = inputData * 2;
+          var processed = true;
+          
+          // ✅ BEST PRACTICE: Explicitly set variables
+          // This guarantees consistent behavior regardless of JDK version
+          execution.setVariable("outputData", result);
+          execution.setVariable("processed", processed);
+        ]]>
+      </script>
+    </scriptTask>
+    
+    <sequenceFlow id="flow2" sourceRef="processData" targetRef="end"/>
+    
+    <endEvent id="end" name="End"/>
+    
+  </process>
+  
+</definitions>
+

@@ -1,0 +1,17 @@
+/Users/julley/HMS-stack/kafka-demo/src/main/java/com/example/kafka/consumer/LagMitigationConsumer.java
+/Users/julley/HMS-stack/kafka-demo/src/main/java/com/example/kafka/eventsourcing/OrderCancelledEvent.java
+/Users/julley/HMS-stack/kafka-demo/src/main/java/com/example/kafka/examples/LagMitigationExample.java
+/Users/julley/HMS-stack/kafka-demo/src/main/java/com/example/kafka/examples/ProducerExample.java
+/Users/julley/HMS-stack/kafka-demo/src/main/java/com/example/kafka/examples/ConsumerExample.java
+/Users/julley/HMS-stack/kafka-demo/src/main/java/com/example/kafka/config/ConsumerConfigFactory.java
+/Users/julley/HMS-stack/kafka-demo/src/main/java/com/example/kafka/streams/WordCountStreamsApp.java
+/Users/julley/HMS-stack/kafka-demo/src/main/java/com/example/kafka/examples/EventSourcingExample.java
+/Users/julley/HMS-stack/kafka-demo/src/main/java/com/example/kafka/eventsourcing/OrderPaidEvent.java
+/Users/julley/HMS-stack/kafka-demo/src/main/java/com/example/kafka/eventsourcing/EventSourcingWriteSegment.java
+/Users/julley/HMS-stack/kafka-demo/src/main/java/com/example/kafka/config/ProducerConfigFactory.java
+/Users/julley/HMS-stack/kafka-demo/src/main/java/com/example/kafka/producer/ReliableKafkaProducer.java
+/Users/julley/HMS-stack/kafka-demo/src/main/java/com/example/kafka/eventsourcing/OrderShippedEvent.java
+/Users/julley/HMS-stack/kafka-demo/src/main/java/com/example/kafka/eventsourcing/OrderCreatedEvent.java
+/Users/julley/HMS-stack/kafka-demo/src/main/java/com/example/kafka/consumer/ReliableKafkaConsumer.java
+/Users/julley/HMS-stack/kafka-demo/src/main/java/com/example/kafka/eventsourcing/OrderEvent.java
+/Users/julley/HMS-stack/kafka-demo/src/main/java/com/example/kafka/eventsourcing/EventSourcingReadSegment.java

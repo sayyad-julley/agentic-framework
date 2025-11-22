@@ -1,0 +1,14 @@
+package policy.authz
+
+default allow = false
+
+allow {
+    input.user == "admin"
+}
+
+allow {
+    input.method == "GET"
+    input.path == ["v1", "data"]
+    input.user == "alice"
+}
+

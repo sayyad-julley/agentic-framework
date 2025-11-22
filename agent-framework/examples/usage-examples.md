@@ -486,6 +486,267 @@ Use retrieved documents
 5. **Semantic Matching**: Match based on intent, not just keywords
 6. **Explicit Instructions**: Clear, numbered steps for LLM to follow
 
+## Example 9: Reactive Flow - Fix Hydration Error
+
+### Scenario: User asks "Fix hydration error in my code"
+
+**Step 1: Flow Selection**
+```
+Query: "Fix hydration error in my code"
+Intent: Fix (keyword: "fix")
+Flow: Reactive
+```
+
+**Step 2: Reactive Flow Execution**
+```
+R1: Match query → hydration-agent (high relevance)
+R2: Discover sub-agents → client-only-ui-hydration.md
+R3: Match sub-agent → client-only-ui-hydration (high relevance)
+R4: Detect patterns → window access in useState
+R5: Fetch docs → React hydration documentation
+R6: Apply fix → Move window access to useEffect
+```
+
+**Result**: Fixed existing hydration error
+
+---
+
+## Example 10: Proactive Flow - Create Todo App
+
+### Scenario: User asks "Create todo-app with React"
+
+**Step 1: Flow Selection**
+```
+Query: "Create todo-app with React"
+Intent: Implementation (keyword: "create")
+Flow: Proactive
+```
+
+**Step 2: Proactive Flow Execution (Interleaved During Code Generation)**
+```
+P1: Detect files → React components (*.tsx)
+P2: Activate agents → hydration-agent, performance-agent
+P3: Load sub-agents → All proactive-enabled sub-agents
+
+P4-P6: DURING Code Generation (Interleaved):
+  
+  Chunk 1: Generate TodoList component
+    → P4: Detect window access in useState (hydration issue)
+    → P5: Fetch React hydration docs
+    → P6: Fix immediately → Move to useEffect
+    → Continue with fixed code
+  
+  Chunk 2: Generate TodoItem component
+    → P4: Detect missing memoization (performance issue)
+    → P5: Fetch React performance docs
+    → P6: Fix immediately → Add React.memo
+    → Continue with fixed code
+  
+  Chunk 3: Generate handlers
+    → P4: Detect missing useCallback (performance issue)
+    → P5: Fetch React hooks docs
+    → P6: Fix immediately → Add useCallback
+    → Continue with fixed code
+```
+
+**Result**: Created todo-app with proactive fixes applied DURING generation (not after)
+
+---
+
+## Example 11: Both Flows - Create and Fix
+
+### Scenario: User asks "Create login page and fix hydration error"
+
+**Step 1: Flow Selection**
+```
+Query: "Create login page and fix hydration error"
+Intent: Both (keywords: "create" + "fix")
+Flow: Both (Proactive first, then Reactive)
+```
+
+**Step 2: Proactive Flow Execution**
+```
+P1-P6: Create login page with proactive fixes
+```
+
+**Step 3: Reactive Flow Execution**
+```
+R1-R6: Fix existing hydration error
+```
+
+**Result**: Created login page (proactive) and fixed existing error (reactive)
+
+## Example 12: Skill-Assisted Development with Interleaved Pattern
+
+### Scenario: Implement Mintlify documentation site
+
+This example demonstrates the complete interleaved guidance pattern (Before/During/After) for skill-assisted development.
+
+**Query**: "Implement Mintlify in root folder"
+
+**Phase 6 Execution**:
+
+**Step 1: Query Analysis**
+```
+Intent: Set up Mintlify documentation site
+Keywords: ["mintlify", "implement", "documentation"]
+Scope: Create docs folder, docs.json, initial pages
+```
+
+**Step 2: Agent Matching (Phase 1)**
+```
+Query matches: agent-skills (keyword: "implement")
+Agent capabilities: route, discover, select
+```
+
+**Step 3: Skill Discovery**
+```
+Scans skills-hms/ directory
+Matches: mintlify-documentation
+- Keyword: "mintlify" → name contains "mintlify" → 8 points
+- Semantic: Query intent matches skill description → 9 points
+- Combined: (8 × 0.6) + (9 × 0.4) = 8.4
+Selected: mintlify-documentation (score: 8.4)
+```
+
+**Step 4: Skill Loading**
+```
+Reads mintlify-documentation/SKILL.md
+
+Extracted Patterns:
+- Pattern 1: OpenAPI Validation Workflow (2-step validation)
+- Pattern 2: Path Conflict Resolution (x-mint extension)
+- Pattern 3: Performance-Optimized Custom Components
+
+Extracted Best Practices:
+- Always include $schema reference for validation
+- Select theme strategically (maple for AI/SaaS)
+- Define navigation structure based on content organization
+
+Extracted Workarounds:
+- Workaround 1: CORS Configuration for API Playground
+- Workaround 2: Custom UI Element Targeting (with maintenance debt)
+- Workaround 3: File/Operation Conflict Resolution
+
+Extracted Anti-Patterns:
+- Anti-Pattern 1: OpenAPI 2.0 Usage (results in blank pages)
+- Anti-Pattern 2: Path Mismatch (trailing slash differences)
+- Anti-Pattern 3: Case Sensitivity Failure (lowercase HTTP methods)
+- Anti-Pattern 4: Partial Inclusion Pitfall (mixing auto/manual)
+- Anti-Pattern 5: File/Operation Conflict (MDX file vs OpenAPI operation)
+```
+
+**Step 5: Interleaved Code Generation**
+
+**Code Block 1: Create docs.json**
+
+**Before Code Block**:
+```
+[Skill Instruction Reference]: "Always include $schema reference for validation and autocomplete"
+[Pattern Identified]: None (initial setup)
+[Best Practice Identified]: Include $schema, select theme strategically
+[Anti-Pattern Noted]: No OpenAPI 2.0 references, no path mismatches (not applicable yet)
+[Workaround Checked]: Not applicable for initial setup
+```
+
+**During Code Generation**:
+```
+[Apply Best Practice]: Include $schema reference
+Generate: { "$schema": "https://mintlify.com/docs.json", ... }
+
+[Apply Best Practice]: Select theme strategically (maple for modern, clean)
+Generate: "theme": "maple"
+
+[Apply Best Practice]: Define navigation structure based on content organization
+Generate: "navigation": [ { "group": "Getting Started", "pages": [...] } ]
+```
+
+**After Code Block**:
+```
+[Verify Anti-Pattern]: OpenAPI 2.0 Usage - ✓ Not present (no OpenAPI yet)
+[Verify Anti-Pattern]: Path Mismatch - ✓ Not applicable (no OpenAPI yet)
+[Verify Best Practice]: $schema included - ✓ Verified
+[Verify Best Practice]: Theme selected - ✓ Verified (maple)
+[Verify Pattern]: None applied - ✓ N/A
+```
+
+**Code Block 2: Create introduction.mdx**
+
+**Before Code Block**:
+```
+[Skill Instruction Reference]: Basic MDX page structure
+[Pattern Identified]: None (simple page)
+[Best Practice Identified]: Use frontmatter for metadata
+[Anti-Pattern Noted]: No OpenAPI path mismatches (not applicable)
+[Workaround Checked]: Not applicable
+```
+
+**During Code Generation**:
+```
+[Apply Best Practice]: Use frontmatter for page metadata
+Generate:
+---
+title: Introduction
+description: Welcome to the documentation
+---
+
+# Introduction
+...
+```
+
+**After Code Block**:
+```
+[Verify Anti-Pattern]: All anti-patterns checked - ✓ None applicable
+[Verify Best Practice]: Frontmatter used - ✓ Verified
+[Verify Pattern]: None applied - ✓ N/A
+```
+
+**Code Block 3: Future OpenAPI Integration (Example)**
+
+**Before Code Block**:
+```
+[Skill Instruction Reference]: "OpenAPI 3.x only - OpenAPI 2.0 results in blank pages"
+[Pattern Identified]: Pattern 1: OpenAPI Validation Workflow
+[Best Practice Identified]: Validate OpenAPI 3.x before integration
+[Anti-Pattern Noted]: OpenAPI 2.0 Usage MUST be avoided
+[Workaround Checked]: Not applicable
+```
+
+**During Code Generation**:
+```
+[Apply Pattern]: OpenAPI Validation Workflow
+- Step 1: Run mint dev locally to reveal configuration issues
+- Step 2: Validate externally with Swagger Editor
+
+[Apply Best Practice]: Ensure OpenAPI is 3.x
+Generate: openapi: path/to/openapi.yaml (ensuring it's 3.x)
+
+[Apply Anti-Pattern Prevention]: Verify OpenAPI version is 3.x, not 2.0
+Check: openapi.yaml version field is "3.0.0" or "3.1.0"
+```
+
+**After Code Block**:
+```
+[Verify Anti-Pattern]: OpenAPI 2.0 Usage - ✓ Avoided (verified 3.x)
+[Verify Anti-Pattern]: Path Mismatch - ✓ Checked (paths match exactly)
+[Verify Anti-Pattern]: Case Sensitivity - ✓ Checked (HTTP methods uppercase)
+[Verify Best Practice]: OpenAPI 3.x validated - ✓ Verified
+[Verify Pattern]: Validation workflow applied - ✓ Verified
+```
+
+**Result**: 
+- All skill patterns applied during development
+- All best practices followed
+- All anti-patterns verified and avoided
+- Workarounds documented when applicable
+- Complete interleaved guidance pattern demonstrated
+
+**Key Takeaways**:
+1. **Before Each Code Block**: Reference skill instructions, identify patterns/best practices/anti-patterns
+2. **During Code Generation**: Apply patterns, follow best practices, implement workarounds
+3. **After Code Blocks**: Verify anti-patterns avoided, best practices followed, patterns correctly applied
+4. **Throughout**: Continuously reference skill instructions, maintain pattern compliance
+
 ## Notes
 
 - All examples follow the framework's prompt engineering techniques
@@ -493,4 +754,6 @@ Use retrieved documents
 - Skills are used for reusable operations
 - Context7 is integrated throughout for up-to-date documentation
 - Fallback strategies ensure reliability
+- Framework supports both reactive (fix) and proactive (prevent) flows
+- **Phase 6 (Skill-Assisted Development)**: Uses interleaved guidance pattern (Before/During/After) to apply patterns, best practices, workarounds, and avoid anti-patterns during development
 

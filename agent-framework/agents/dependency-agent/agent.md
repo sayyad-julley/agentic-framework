@@ -45,6 +45,15 @@ context7:
     - package management
     - compatibility
   fetchStrategy: on-demand
+proactiveMode:
+  enabled: true
+  triggers:
+    - filePatterns: ["package.json", "package-lock.json", "yarn.lock", "*.ts", "*.tsx", "*.js", "*.jsx"]
+    - packageJsonCreation: true
+    - dependencyInstallation: true
+    - importStatements: true
+  autoScan: true
+  autoFix: true
 ---
 
 # Dependency Agent
@@ -87,14 +96,28 @@ This agent includes the following sub-agents:
    - Detects and fixes missing dependencies
    - Uses pattern-matcher skill for import analysis
 
-## Usage
+## Reactive Flow Usage
 
-The agent is automatically activated when queries contain dependency-related keywords such as:
-- "dependency issue"
-- "version mismatch"
-- "missing dependency"
-- "incompatible version"
-- "package not found"
+This agent activates in reactive mode when queries contain:
+- "fix dependency issue"
+- "fix version mismatch"
+- "fix missing dependency"
+- "fix incompatible version"
+- "fix package not found"
+
+## Proactive Flow Usage
+
+This agent automatically activates in proactive mode when:
+- Creating or modifying package.json
+- Installing dependencies
+- Adding import statements in code files
+- Creating new projects with dependencies
+
+**Proactive Behavior**:
+- Scans package.json for version conflicts
+- Detects missing dependencies from import statements
+- Validates dependency compatibility
+- Prevents dependency issues during implementation
 
 ## Detection Strategy
 

@@ -1,0 +1,28 @@
+# Pattern 4: Application-Specific Timeout Override
+# Application owners override with specific targets (Dataplane by name)
+# with kuma.io/policy-role: workload-owner (highest priority)
+
+apiVersion: kuma.io/v1alpha1
+kind: MeshTimeout
+metadata:
+  name: app-specific-timeout
+  labels:
+    kuma.io/policy-role: workload-owner  # Highest priority
+    kuma.io/mesh: default
+spec:
+  # Specific target (applies to specific dataplane)
+  targetRef:
+    kind: Dataplane
+    name: orders-service-7d4f8b9c-xyz
+    mesh: default
+  to:
+  - targetRef:
+      kind: MeshService
+      name: payment-service
+    default:
+      connectionTimeout: 10s  # Override: longer timeout for payment service
+      idleTimeout: 60m
+      http:
+        requestTimeout: 30s  # Override: longer timeout for payment processing
+        streamIdleTimeout: 60m
+

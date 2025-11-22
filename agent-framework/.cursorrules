@@ -39,6 +39,25 @@ For EVERY user query, BEFORE you begin processing, you MUST:
 
 **This phase ensures all agents are available for matching BEFORE you analyze the query.**
 
+### Phase 0.5: Query Intent Detection & Flow Routing (NEW - MANDATORY)
+
+**CRITICAL**: After loading agents, determine which flow to use based on query intent.
+
+1. **Extract Intent Indicators**:
+   - **Proactive Flow Triggers**: "create", "build", "implement", "add", "make", "generate", "new", "setup", "initialize", "write", "develop"
+   - **Reactive Flow Triggers**: "fix", "solve", "resolve", "error", "issue", "bug", "problem", "broken", "wrong", "debug", "repair"
+
+2. **Classify Query Intent**:
+   - Check if query contains proactive triggers → Route to **Proactive Flow**
+   - Check if query contains reactive triggers → Route to **Reactive Flow**
+   - If both present → Execute both flows sequentially (Proactive first, then Reactive)
+
+3. **Set Active Flow**:
+   - Store in working memory: `activeFlow: "reactive" | "proactive" | "both"`
+   - Use flow to determine which workflow steps to follow
+
+**Validation**: Which flow(s) should be activated? (reactive/proactive/both)
+
 ### Step 1: Discover Available Agents
 
 **NOTE**: If you completed Phase 0, you already have agent metadata loaded. Skip to Step 2.
@@ -54,19 +73,21 @@ If Phase 0 was not completed, you MUST:
    - `context7` configuration
 4. **Build Agent List**: Keep list of available agents in memory
 
-### Step 2: Semantic Query Matching
+### Step 2: Flow Selection & Execution
 
-1. **Analyze Query**: Extract intent, keywords, and context from user query
-2. **Extract Keywords**: 
-   - Remove stop words (the, a, an, how, what, etc.)
-   - Extract technical terms, library names, concepts
-   - Identify multi-word phrases
-   - Prioritize longer, more specific terms
-3. **Match to Agents**: Compare query against agent metadata:
-   - Check if query keywords match `triggers` or `semanticKeywords`
-   - Compare query intent with `semanticDescription`
-   - Rank agents by relevance
-4. **Select Agent**: Choose most relevant agent(s) based on semantic understanding
+**CRITICAL**: After Phase 0.5, execute the appropriate flow(s).
+
+1. **Check Active Flow**:
+   - If `activeFlow === "reactive"`: Follow **Reactive Flow** (R1-R6)
+   - If `activeFlow === "proactive"`: Follow **Proactive Flow** (P1-P6)
+   - If `activeFlow === "both"`: Follow **Proactive Flow** first (P1-P6), then **Reactive Flow** (R1-R6)
+
+2. **Execute Selected Flow(s)**:
+   - Follow all steps in the selected flow
+   - Complete validation checkpoints for the flow
+   - Report results based on flow type
+
+**Validation**: Which flow(s) are you executing? (reactive/proactive/both)
 
 ### Step 3: Sub-Agent Discovery
 
@@ -391,6 +412,37 @@ Compare query against agent metadata:
 - **Scoring**: Calculate relevance score based on semantic understanding
 - **Selection**: Choose agent(s) with highest relevance
 
+**CRITICAL FALLBACK: No Agent Match**
+
+If NO agents match (relevance score below threshold or no semantic match):
+
+1. **Extract Problem Keywords**: Extract 3-5 most relevant keywords describing the issue
+2. **Load Documentation via Context7** (PRIMARY - MANDATORY):
+   - For each extracted keyword, call `mcp_context7_resolve-library-id` with the keyword
+   - If library ID resolved, call `mcp_context7_get-library-docs` with:
+     - `context7CompatibleLibraryID`: [resolved ID]
+     - `tokens`: 5000 (for comprehensive documentation)
+     - `topic`: [issue description from query]
+   - Load and review documentation for similar patterns, anti-patterns, or known issues
+3. **Search for Similar Patterns via Web Search** (SECONDARY - if Context7 fails or insufficient):
+   - Call `web_search` with issue-specific search terms:
+     - `search_term`: [primary keyword + "issue" + "fix" or "pattern" + "solution"]
+     - Search variations: "[keyword] issue", "[keyword] bug", "[keyword] fix", "[keyword] pattern", "[keyword] solution"
+   - Review search results for similar issues and fix patterns
+4. **Analyze Similar Patterns**: 
+   - Review fetched documentation (from Context7) and/or web search results
+   - Identify common patterns or anti-patterns related to the issue
+   - Extract fix strategies from documentation and search results
+   - Map patterns to code structure in target files
+5. **Apply Pattern-Based Fix**: 
+   - Use identified patterns from Context7 docs and/or web search as fix strategy
+   - Apply fixes based on best practices from fetched documentation
+   - Follow similar patterns found in documentation
+6. **Final Fallback to LLM Knowledge** (TERTIARY - if Context7 and Web Search both fail):
+   - Use existing knowledge to identify similar patterns
+   - Apply fixes based on general best practices and known patterns
+   - **Note**: Always document that Context7 and Web Search were attempted first
+
 ### Sub-Agent Matching
 
 Compare query against sub-agent metadata:
@@ -403,7 +455,7 @@ Compare query against sub-agent metadata:
 
 ## Example Workflow
 
-### Example: "Fix dialog reopening when navigating"
+### Example 1: "Fix dialog reopening when navigating" (Agent Match)
 
 1. **Phase 0 - Load Agents**: Read `agent-framework/AGENT_REGISTRY.md` (MANDATORY FIRST STEP)
 2. **Match Query**: 
@@ -423,6 +475,486 @@ Compare query against sub-agent metadata:
 6. **Fetch Docs** (if needed): Use Context7 to fetch React/Next.js navigation docs
 7. **Apply Fix**: Follow fix strategy from sub-agent markdown
 8. **Report Results**: Show what was fixed
+
+### Example 2: "Fix authentication token refresh issue" (No Agent Match - Fallback)
+
+1. **Phase 0 - Load Agents**: Read `agent-framework/AGENT_REGISTRY.md` (MANDATORY FIRST STEP)
+2. **Match Query**: 
+   - Keywords: ["authentication", "token", "refresh"]
+   - Intent: "fix"
+   - Domain: "authentication"
+   - Matches: NO AGENT MATCHED (no authentication agent exists)
+
+3. **FALLBACK: Pattern Discovery**:
+   - Extract problem keywords: ["authentication", "token", "refresh", "issue"]
+   - **Step 1 - Context7 Load Docs**: 
+     - Call `mcp_context7_resolve-library-id` for "authentication", "token"
+     - If resolved, call `mcp_context7_get-library-docs` to load comprehensive documentation
+     - Review docs for token refresh patterns, authentication flows, and known issues
+   - **Step 2 - Web Search for Similar Patterns**:
+     - If Context7 fails or insufficient, call `web_search` with:
+       - "authentication token refresh issue fix"
+       - "token refresh pattern solution"
+       - "authentication token bug fix"
+     - Review search results for similar issues and solutions
+   - **Step 3 - Analyze Patterns**: 
+     - Review Context7 documentation and/or web search results
+     - Identify: token refresh patterns, authentication flow issues, common fixes
+   - **Step 4 - Apply Pattern-Based Fix**: 
+     - Use discovered patterns from Context7 docs and web search to fix the issue
+   - **Step 5 - Final Fallback**: 
+     - If Context7 and Web Search both fail, use LLM existing knowledge
+     - Document that external sources were attempted first
+
+4. **Report Results**: Show what was fixed based on discovered patterns (from Context7, web search, or LLM knowledge)
+
+## Reactive Flow (Fix Existing Issues)
+
+**Purpose**: Fix problems that already exist in the codebase
+**Trigger**: Query contains fix/solve/resolve/error/bug/problem keywords
+
+### Reactive Flow Steps
+
+#### R1: Semantic Query Matching (Reactive)
+1. **Analyze Query**: Extract intent, keywords, and context
+2. **Extract Keywords**: 
+   - Remove stop words
+   - Extract technical terms, library names, concepts
+   - Identify multi-word phrases
+3. **Match to Agents**: 
+   - Compare query against agent metadata (triggers, semanticKeywords)
+   - Compare query intent with semanticDescription
+   - Rank agents by relevance
+4. **Select Agent**: Choose most relevant agent(s) based on semantic understanding
+
+**If NO Agent Matched** (R1-Fallback):
+1. **Extract Problem Keywords**: Extract 3-5 keywords describing the issue
+2. **Load Documentation via Context7**: Use Context7 to load relevant documentation (see Phase 1 fallback)
+3. **Search for Similar Patterns via Web Search**: Use web search to find similar patterns and solutions
+4. **Apply Pattern-Based Fix**: Use discovered patterns from Context7 docs and web search to fix issues
+5. **Final Fallback to LLM Knowledge**: If Context7 and Web Search both fail, use existing knowledge (with note that external sources were attempted)
+
+#### R2: Sub-Agent Discovery (Reactive)
+1. **Read Sub-Agents**: List `agents/[agent-name]/sub-agents/` directory
+2. **Read Sub-Agent Files**: Read all `.md` files in sub-agents directory
+3. **Extract Metadata**: Parse YAML frontmatter for each sub-agent
+4. **Read Patterns**: Read `anti-patterns/definitions.md`
+
+#### R3: Sub-Agent Matching (Reactive)
+1. **Compare Query**: Match query against sub-agent semantic metadata
+2. **Use Multiple Signals**: semanticKeywords, semanticDescription, instructionExamples
+3. **Rank Sub-Agents**: Calculate relevance score
+4. **Select Sub-Agents**: Choose most relevant sub-agent(s)
+
+#### R4: Pattern Detection (Reactive)
+1. **Read Detection Rules**: From sub-agent's detectionRule
+2. **Read Skill File**: If sub-agent references skills, read skill file
+3. **Read AST Parser Guides**: Read automatic detection guides
+4. **Use Automatic Pattern Detection**: Follow pattern-matcher workflow
+5. **Process Matches**: Use automatically detected matches
+
+#### R5: Context7 Documentation Fetching (Reactive)
+1. **Extract Keywords**: 3-5 most relevant keywords from query
+2. **Search Context7**: Call Context7 MCP tools
+3. **Use Fallback Chain**: Document Retrieval → Web Search → Knowledge
+4. **Use Docs as Primary Source**: Apply fixes based on fetched documentation
+
+#### R6: Fix Application (Reactive)
+1. **Read Fix Strategy**: From sub-agent markdown file
+2. **Read Sub-Agent Examples**: Before/After examples
+3. **Apply Fix**: Follow step-by-step instructions from sub-agent
+4. **Validate Fix**: Ensure fix doesn't break code structure
+5. **Report Results**: Show what was fixed and how
+
+**Reactive Flow Validation**: 
+- [ ] Query matched to agent(s) semantically?
+- [ ] Sub-agent(s) selected based on query intent?
+- [ ] Patterns detected using pattern-matcher?
+- [ ] Documentation fetched via Context7?
+- [ ] Fix applied following sub-agent workflow?
+
+## Proactive Flow (Prevent Issues During Implementation)
+
+**Purpose**: Prevent issues from occurring during code creation
+**Trigger**: Query contains create/build/implement/add/make/generate/new keywords
+
+### Proactive Flow Steps
+
+#### P1: File Type Detection (Proactive)
+1. **Identify Target Files**: 
+   - Files being created/modified in current query
+   - New components, pages, utilities, configurations
+   - Package.json changes
+2. **Extract File Patterns**: 
+   - Determine file extensions (*.tsx, *.ts, *.jsx, *.js, package.json)
+   - Identify framework/library (React, Next.js, etc.)
+   - Detect component types (page, component, utility, etc.)
+
+#### P2: Agent Activation (Proactive)
+1. **Match File Patterns to Agents**:
+   - For React/Next.js files (*.tsx, *.ts, *.jsx, *.js):
+     - Activate: hydration-agent, performance-agent
+   - For package.json:
+     - Activate: dependency-agent
+   - For any TypeScript/JavaScript:
+     - Activate: All applicable agents based on filePatterns
+2. **Load All Matched Agents**:
+   - Read agent.md files for all matched agents
+   - Extract proactive mode configuration
+   - Verify agents support proactive mode (proactiveMode.enabled: true)
+
+#### P3: Sub-Agent Discovery (Proactive)
+1. **For Each Activated Agent**:
+   - Read `agents/[agent-name]/sub-agents/` directory
+   - Read all sub-agent files
+   - Extract metadata including proactiveMode configuration
+2. **Filter Sub-Agents**:
+   - Only include sub-agents with proactiveMode.enabled: true
+   - Prioritize sub-agents based on file type and context
+
+#### P4-P6: Real-Time Pattern Detection & Fixing (During Code Generation)
+
+**CRITICAL**: P4-P6 are executed **DURING code generation** (interleaved), not after code is created. Agents/sub-agents/skills are used in real-time as code is being generated, similar to reactive flow but applied during implementation.
+
+**Interleaved Execution Pattern**:
+1. **LLM generates code chunk** (e.g., component, function, file section)
+2. **Immediately execute P4-P6** for current chunk (same workflow as reactive R4-R6)
+3. **Continue generation** with fixed code
+4. **Repeat** for each subsequent code chunk
+
+#### P4: Real-Time Pattern Detection (During Code Generation)
+1. **For each code chunk being generated**:
+   - Extract code content from current generation step
+   - For each activated sub-agent:
+     - Extract detectionRule from sub-agent frontmatter
+     - Read pattern-matcher skill and AST parser guides
+     - Apply automatic pattern detection (same as reactive R4)
+     - Detect anti-patterns in current code chunk
+2. **Collect detected issues** for current chunk
+3. **If issues detected**: Proceed to P5
+4. **If no issues**: Continue to next code chunk
+
+#### P5: Context7 Documentation Fetching (During Code Generation)
+1. **If issues detected in P4**:
+   - Extract keywords from detected patterns
+   - Fetch documentation via Context7 (same as reactive R5)
+   - Use fallback chain: Document Retrieval → Web Search → Knowledge
+   - Use docs as primary source for fix strategy
+2. **Proceed to P6** with documentation
+
+#### P6: Immediate Fix Application (During Code Generation)
+1. **For each detected issue in current chunk**:
+   - Read fix strategy from sub-agent markdown
+   - Read sub-agent Before/After examples
+   - Apply fix immediately (same as reactive R6)
+2. **Continue generation** with fixed code
+3. **Repeat P4-P6** for next code chunk
+
+**Key Points**:
+- Same agents/sub-agents/skills as reactive flow
+- Applied during generation, not after
+- Real-time pattern detection and fixing
+- Each code chunk is checked before proceeding
+
+**Proactive Flow Validation**:
+- [ ] Target files identified?
+- [ ] Agents activated based on file patterns?
+- [ ] Sub-agents loaded for proactive mode?
+- [ ] **P4-P6 Interleaved**: Agents/sub-agents/skills used DURING code generation?
+- [ ] **Real-Time Detection**: Pattern detection happens for each code chunk?
+- [ ] **Immediate Fixes**: Fixes applied before continuing to next chunk?
+- [ ] Documentation fetched via Context7 (when issues detected)?
+- [ ] Preventive fixes applied automatically during generation?
+
+## Phase 6: Skill-Assisted Development Flow (NEW - OPTIONAL)
+
+**CRITICAL**: This flow runs in parallel with existing reactive/proactive flows. It does NOT replace or modify them. This is an additive flow that provides skill-assisted guidance during code development.
+
+### When This Flow Activates
+
+This flow runs when ALL of the following conditions are met:
+1. Query contains implementation/development keywords (implement, build, create, develop, setup, configure, integrate, etc.)
+2. `agent-skills` agent is matched during Phase 1 (Semantic Query Matching)
+3. Skill is selected from `skills-hms/` directory based on query
+
+**Flow Selection Logic**:
+```
+IF query contains implementation keywords AND
+   agent-skills matches query (Phase 1) AND
+   skill selected from skills-hms
+THEN
+   Execute Skill-Assisted Development Flow (Phase 6)
+   [Can run alongside Reactive/Proactive flows if applicable]
+```
+
+### Phase 6 Workflow Steps
+
+#### Step 1: Query Analysis
+
+Extract intent, keywords, and implementation scope from user query:
+- **Intent**: What is the user trying to build/implement?
+- **Keywords**: Extract technical terms, library names, concepts
+- **Scope**: What files/components need to be created or modified?
+
+**Example**:
+```
+Query: "Implement Ably realtime chat"
+Intent: Build realtime messaging feature
+Keywords: ["ably", "realtime", "chat", "messaging"]
+Scope: Create chat component, setup Ably integration
+```
+
+#### Step 2: Agent Matching (Phase 1)
+
+Check if query matches `agent-skills` agent:
+- Compare query keywords against `agent-skills` triggers and semanticKeywords
+- Verify agent capabilities include `route`, `discover`, `select`
+- Confirm this is an implementation/development query, not a fix query
+
+**Validation**: Is `agent-skills` agent matched? (YES/NO)
+
+#### Step 3: Skill Discovery
+
+Discover and match skills from `skills-hms/` directory:
+
+1. **Scan Skills Directory**: List all directories in `agent-framework/agents/agent-skills/skills-hms/`
+2. **Load Skill Metadata**: For each skill directory:
+   - Read `SKILL.md` YAML frontmatter
+   - Extract `name` field (for keyword matching)
+   - Extract `description` field (for semantic matching)
+   - Extract `dependencies` (for context)
+3. **Match Query to Skills**:
+   - **Keyword Matching**: Check if query keywords match skill `name` or appear in `description`
+     - Exact match with skill `name`: 10 points
+     - Skill `name` contains keyword: 8 points
+     - Keyword appears in `description`: 5 points
+     - Partial match in `description`: 2 points
+   - **Semantic Matching**: Compare query intent with skill `description` semantic meaning
+     - High similarity (8-10): Skill description directly addresses query intent
+     - Medium similarity (5-7): Skill description partially addresses intent
+     - Low similarity (2-4): Skill description tangentially related
+   - **Combined Score**: (Keyword Score × 0.6) + (Semantic Score × 0.4)
+4. **Select Skill(s)**: Choose skill(s) with combined score > 5.0
+   - If one skill scores significantly higher (>3 points), select only that skill
+   - If multiple skills score similarly (within 2 points), select all relevant skills
+
+**Validation**: Which skill(s) were selected and why? (List skill name(s) and scores)
+
+**Reference**: See `agent-framework/agents/agent-skills/SKILL_DISCOVERY.md` for detailed discovery algorithm.
+
+#### Step 4: Skill Loading
+
+Load full skill content for selected skill(s):
+
+1. **Read Full Skill Content**: Read complete `SKILL.md` file for each selected skill
+2. **Extract Key Information**:
+   - Execution steps
+   - Proven patterns
+   - Best practices
+   - Workarounds
+   - Anti-patterns to avoid
+   - Examples and templates
+3. **Load Referenced Resources**: If skill references resources/templates:
+   - Read files from `resources/` directory
+   - Read files from `templates/` directory
+   - Load any referenced scripts or examples
+
+**Validation**: Is full skill content loaded? (YES/NO)
+
+#### Step 5: Interleaved Code Generation
+
+Apply skill instructions throughout code generation process. This is the core of skill-assisted development.
+
+**Interleaved Guidance Pattern**:
+
+1. **Before Each Code Block**:
+   - **Reference Skill Instructions**: Read relevant sections from skill's `SKILL.md` that apply to the code being generated
+   - **Extract Patterns**: Identify which patterns from skill's "Common Patterns" section should be applied
+   - **Identify Best Practices**: Note which best practices from skill's "Execution Steps" or "Best Practices" section should be followed
+   - **Note Anti-Patterns**: List which anti-patterns from skill's "Anti-Patterns to Avoid" section must be avoided
+   - **Check Workarounds**: Review skill's "Workarounds" section to determine if any workarounds are applicable
+
+2. **During Code Generation**:
+   - **Apply Patterns**: Implement skill's proven patterns as you write code (from "Common Patterns" section)
+   - **Follow Best Practices**: Apply skill's best practices in code structure (from "Execution Steps" or "Best Practices" section)
+   - **Implement Workarounds**: Apply skill's workarounds where "When" conditions are met (from "Workarounds" section)
+   - **Use Examples/Templates**: Reference skill's examples and templates as guidance for code structure
+   - **Reference Execution Steps**: Follow skill's execution steps in order for proper implementation
+   - **Apply Transformation Rules**: Follow skill's transformation rules (if present) for data/code transformation
+
+3. **After Code Blocks**:
+   - **Verify Anti-Patterns**: Check each anti-pattern from skill's "Anti-Patterns to Avoid" section to ensure it's not present
+   - **Verify Best Practices**: Confirm that best practices from skill are correctly applied
+   - **Verify Patterns**: Ensure patterns from skill are correctly implemented
+   - **Verify Workarounds**: If workarounds were applied, verify they're correctly implemented with proper trade-off documentation
+
+4. **Throughout Development**:
+   - **Continuous Reference**: Continuously reference skill instructions at each development step
+   - **Pattern Compliance**: Ensure code follows skill's patterns and best practices throughout
+   - **Anti-Pattern Prevention**: Actively avoid anti-patterns during implementation, not just after
+   - **Workaround Documentation**: Document any workarounds used and their maintenance implications
+
+**Pattern Extraction from Skills**:
+
+When loading a skill, extract the following sections from `SKILL.md`:
+
+1. **Common Patterns** (if present):
+   - Look for section titled "Common Patterns" or "Patterns"
+   - Extract pattern names, descriptions, and examples
+   - Note when each pattern should be applied
+
+2. **Best Practices** (if present):
+   - Look in "Execution Steps" for "Critical Practices" or "Best Practices"
+   - May be in separate "Best Practices" section
+   - Extract practices with their rationale
+
+3. **Workarounds** (if present):
+   - Look for "Workarounds" section
+   - Extract each workaround's "When" condition
+   - Extract implementation steps and trade-offs
+
+4. **Anti-Patterns** (if present):
+   - Look for "Anti-Patterns to Avoid" section
+   - Extract each anti-pattern's description, issue, and resolution
+   - Note how to detect and avoid each one
+
+**Anti-Pattern Verification Process**:
+
+After each code block, systematically verify:
+
+1. **Check Each Anti-Pattern**: For each anti-pattern listed in skill's "Anti-Patterns to Avoid" section:
+   - Verify the anti-pattern is not present in generated code
+   - Check for patterns that might lead to the anti-pattern
+   - Confirm resolution steps from skill are applied if anti-pattern was detected
+
+2. **Verification Checklist**:
+   - [ ] All anti-patterns from skill checked
+   - [ ] No anti-pattern instances found in code
+   - [ ] Resolution steps applied if anti-pattern detected
+   - [ ] Code structure prevents anti-pattern occurrence
+
+**Best Practices Application Process**:
+
+During code generation, apply best practices:
+
+1. **Identify Applicable Practices**: From skill's best practices section, identify which apply to current code block
+2. **Apply Practices**: Implement best practices in code structure, naming, organization
+3. **Verify Application**: After code block, verify practices are correctly applied
+
+**Workaround Implementation Process**:
+
+When workarounds are needed:
+
+1. **Check "When" Conditions**: Review each workaround's "When" condition to determine applicability
+2. **Evaluate Trade-offs**: Understand maintenance debt and trade-offs before applying
+3. **Implement Workaround**: Follow workaround's implementation steps exactly
+4. **Document Usage**: Document that workaround was used and why, including maintenance implications
+
+**Example Interleaved Flow**:
+```
+Query: "Implement Ably realtime chat"
+
+1. [Skill Instruction]: "Use singleton SDK instance (reuse throughout application lifecycle)"
+   → Generate: const ably = new Ably.Realtime({ authUrl: '/api/ably-token' });
+
+2. [Skill Instruction]: "Channels are ephemeral - no pre-provisioning required"
+   → Generate: const channel = ably.channels.get('room:general');
+
+3. [Skill Instruction]: "Avoid channel proliferation - structure channels around logical groups"
+   → Verify: Channel name follows logical grouping pattern
+
+4. [Skill Instruction]: "Use token authentication for client-side (mandatory)"
+   → Verify: authUrl is configured, not using basic auth
+
+5. [Skill Instruction]: "Subscribe to messages before publishing"
+   → Generate: channel.subscribe((message) => { ... });
+
+6. [Anti-Pattern Check]: "Avoid channel proliferation (excessive granular channels)"
+   → Verify: Channel structure is logical, not per-user/per-session
+
+7. Continue with next code block, applying skill instructions throughout...
+```
+
+**Key Principles**:
+- **Proactive Application**: Apply skill instructions DURING code generation, not after
+- **Continuous Reference**: Reference skill content throughout development
+- **Pattern Compliance**: Ensure code follows skill's patterns and best practices
+- **Anti-Pattern Prevention**: Actively avoid anti-patterns during implementation
+
+**Validation**: 
+- [ ] Skill instructions referenced before code blocks?
+- [ ] Patterns/best practices applied during code generation?
+- [ ] Anti-patterns verified after code blocks?
+- [ ] Skill examples/templates used as guidance?
+
+### Integration with Other Flows
+
+The Skill-Assisted Development Flow (Phase 6) can run alongside:
+- **Reactive Flow**: If fixing issues while implementing features
+- **Proactive Flow**: If preventing issues while implementing features
+
+**Flow Coordination**:
+- Phase 6 runs independently when conditions are met
+- Can run in parallel with Phase 1-5 (Reactive/Proactive flows)
+- Does NOT interfere with existing flows
+- Provides additional guidance layer during development
+
+### Phase 6 Validation Checklist
+
+Before completing Phase 6, verify:
+
+- [ ] Query analyzed for implementation intent?
+- [ ] `agent-skills` agent matched (Phase 1)?
+- [ ] Skills discovered from `skills-hms/` directory?
+- [ ] Skill metadata loaded (name, description)?
+- [ ] Skill selected based on keyword + semantic matching?
+- [ ] Full skill content loaded (`SKILL.md`)?
+- [ ] Referenced resources/templates loaded (if applicable)?
+- [ ] Interleaved guidance applied during code generation?
+- [ ] Skill patterns/best practices applied?
+- [ ] Skill workarounds implemented?
+- [ ] Anti-patterns verified and avoided?
+- [ ] Skill examples/templates used as guidance?
+
+### Example: Complete Phase 6 Workflow
+
+**Query**: "Implement Algolia search in my Next.js app"
+
+**Phase 6 Execution**:
+
+1. **Query Analysis**:
+   - Intent: Add search functionality
+   - Keywords: ["algolia", "search", "next.js"]
+   - Scope: Create search component, setup Algolia integration
+
+2. **Agent Matching** (Phase 1):
+   - Query matches `agent-skills` (keyword: "implement")
+   - Agent capabilities verified: route, discover, select
+
+3. **Skill Discovery**:
+   - Scans `skills-hms/` directory
+   - Matches `implementing-algolia-search`:
+     - Keyword: "algolia" → name contains "algolia" → 8 points
+     - Keyword: "search" → name contains "search" → 8 points
+     - Semantic: Query intent matches skill description → 9 points
+     - Combined: (16 × 0.6) + (9 × 0.4) = 13.2
+   - Selected: `implementing-algolia-search` (score: 13.2)
+
+4. **Skill Loading**:
+   - Reads `implementing-algolia-search/SKILL.md`
+   - Extracts: radical denormalization pattern, frontend direct search, custom ranking, etc.
+
+5. **Interleaved Code Generation**:
+   - [Apply: Radical denormalization - flatten all related data into record]
+   - Generate: Flattened product record structure
+   - [Apply: Frontend direct search - use Search-Only API key]
+   - Generate: Client-side search initialization
+   - [Apply: Selective indexing - only include needed attributes]
+   - Generate: Index configuration
+   - [Verify: Avoid normalized structures anti-pattern]
+   - Complete implementation following Algolia best practices
+
+**Result**: Code follows Algolia patterns, best practices applied, anti-patterns avoided.
 
 ## Important Notes
 
@@ -460,6 +992,7 @@ Before proceeding to the next phase, you MUST verify completion of the current p
 - ❌ Using existing knowledge without attempting Context7 first
 - ❌ Applying fixes without following sub-agent workflow
 - ❌ Responding without validation checklist completion
+- ❌ **Skipping fallback when no agents match** - MUST use Context7/web search to find similar patterns
 
 ### Correct vs Incorrect Workflow Examples
 
@@ -538,20 +1071,27 @@ If you cannot answer these questions, you have NOT used the complete agent frame
 
 ## Error Handling
 
-- **If agent not found**: Inform user, suggest similar agents
+- **If agent not found**: Use Context7 to load docs → Web Search for similar patterns → LLM knowledge as final fallback (MANDATORY)
 - **If sub-agent not found**: Use pattern matching as fallback
 - **If skill not found**: Implement basic functionality, note skill missing
 - **If Context7 fails**: Use fallback chain (Document Retrieval → Web Search → Knowledge)
 - **If pattern match fails**: Report no matches found, suggest manual review
 
+**CRITICAL**: When no agents match, you MUST follow this fallback chain:
+1. **Context7** - Load documentation for relevant libraries
+2. **Web Search** - Find similar patterns and solutions
+3. **LLM Knowledge** - Final fallback (with note that external sources were attempted)
+
+This is not optional. Always attempt Context7 and Web Search before using LLM knowledge.
+
 ## Success Criteria
 
 For successful agent execution:
-1. ✅ Agent discovered and matched semantically
-2. ✅ Sub-agent selected based on query intent
-3. ✅ Patterns detected using skills (if needed)
-4. ✅ Documentation fetched via Context7 (if needed)
-5. ✅ Fixes applied based on markdown instructions
+1. ✅ Agent discovered and matched semantically (OR Context7 docs loaded → Web Search → LLM knowledge if no agent matched)
+2. ✅ Sub-agent selected based on query intent (OR pattern discovery from Context7 docs/web search if no agent matched)
+3. ✅ Patterns detected using skills (if needed) (OR pattern analysis from Context7 docs/web search)
+4. ✅ Documentation loaded via Context7 first, then Web Search if Context7 fails, then LLM knowledge as final fallback
+5. ✅ Fixes applied based on markdown instructions (OR fixes applied based on discovered patterns from Context7/web search/LLM knowledge)
 6. ✅ Results reported clearly to user
 
 Remember: This framework is markdown-based. Read files, parse YAML, follow instructions, use Context7, and apply fixes based on markdown content.

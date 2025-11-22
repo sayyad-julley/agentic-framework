@@ -10,6 +10,26 @@
 
 ---
 
+## STRICT INFORMATION RETRIEVAL FLOW (MANDATORY FOR ALL QUERIES)
+
+**CRITICAL RULE**: For EVERY query, you MUST follow this EXACT order. LLM knowledge is STRICTLY FORBIDDEN until all external sources are exhausted.
+
+**MANDATORY FLOW ORDER** (NO EXCEPTIONS):
+1. **Agents** → If query matches any agent, use agent/sub-agent workflows
+2. **Context7 Documentation** → MUST attempt Context7 documentation fetching
+3. **Web Search** → MUST attempt Web Search if Context7 fails
+4. **LLM Knowledge** → ONLY as last resort after all above fail
+
+**VALIDATION**: Before using LLM knowledge, you MUST verify:
+- ✅ Context7 was attempted
+- ✅ Web Search was attempted (if Context7 failed)
+- ✅ Both returned no results or failed
+- ✅ Only then use LLM knowledge
+
+**VIOLATION**: Using LLM knowledge without attempting Context7 and Web Search first is STRICTLY FORBIDDEN and results in an INVALID response.
+
+---
+
 ## Complete Agent Framework Workflow (MANDATORY)
 
 ### Phase 0: Mandatory Agent Loading (MUST HAPPEN FIRST - CANNOT SKIP)
@@ -120,29 +140,44 @@ Once an agent is selected:
 
 ---
 
-### Phase 4: Context7 Documentation Fetching (MANDATORY FOR CODE-RELATED QUERIES)
+### Phase 4: Strict Information Retrieval Flow (MANDATORY FOR ALL QUERIES)
 
-**CRITICAL**: For EVERY query that involves code analysis, documentation, or library-specific questions, you MUST fetch documentation via Context7 (with fallback chain).
+**CRITICAL**: For EVERY query, you MUST follow this STRICT fallback chain. LLM knowledge is ONLY used as the LAST resort.
+
+**MANDATORY FLOW ORDER** (STRICTLY ENFORCED):
+1. **Agents** (if matched) → Use agent/sub-agent workflows
+2. **Context7 Documentation** → Fetch up-to-date documentation
+3. **Web Search** → Search for current information
+4. **LLM Knowledge** → ONLY if all above fail
+
+**DO NOT SKIP ANY STEP**: You MUST attempt each step in order before proceeding to the next.
+
+---
+
+#### Step 1: Context7 Documentation Fetching (MANDATORY - TRY FIRST)
+
+**CRITICAL**: For EVERY query (code-related or not), you MUST attempt Context7 documentation fetching FIRST before using LLM knowledge.
 
 1. **Extract Keywords**: From the user query, extract 3-5 most relevant keywords:
    - Remove stop words
-   - Extract technical terms, library names
+   - Extract technical terms, library names, concepts
    - Identify multi-word phrases
+   - Prioritize longer, more specific terms
 
-2. **Search Context7** (PRIMARY STRATEGY):
+2. **Search Context7** (PRIMARY STRATEGY - MUST TRY FIRST):
    
    **For each extracted keyword** (try up to 3 keywords):
    
    **Step 1**: Call `mcp_context7_resolve-library-id` with:
    - `libraryName`: [keyword from extraction]
-   - **If this tool fails or is unavailable, proceed to FALLBACK STRATEGY**
+   - **If this tool fails or is unavailable, proceed to Step 2 (Web Search)**
    
    **Step 2**: If Step 1 succeeds, call `mcp_context7_get-library-docs` with:
    - `context7CompatibleLibraryID`: [use the resolved ID from step 1]
    - `tokens`: 5000 (for comprehensive documentation)
    - `topic`: [if a specific topic is mentioned in the query, e.g., "hooks", "routing"]
 
-3. **FALLBACK STRATEGY 1: Document Retrieval System** (if Context7 MCP fails):
+3. **FALLBACK: Document Retrieval System** (if Context7 MCP fails):
    
    **Step 1**: Call `mcp_document-retrieval-system_search_documents` with:
    - `query`: [full user query or primary keyword]
@@ -155,28 +190,51 @@ Once an agent is selected:
    - `max_tokens`: 4000
    - `max_results`: 5
 
-4. **FALLBACK STRATEGY 2: Web Search** (if Document Retrieval fails):
-   
-   Call `web_search` with:
-   - `search_term`: [primary keyword or query]
-
-5. **FINAL FALLBACK: Existing Knowledge** (if all fail):
-   
-   Use your existing knowledge, but note that documentation may be outdated.
-
 **Critical Context7 Instructions**:
 - **ALWAYS** extract keywords FIRST before calling Context7 tools
 - **ALWAYS** try Context7 MCP tools first (if available)
 - **ALWAYS** use fetched documentation as PRIMARY SOURCE
-- **ONLY** use existing knowledge to supplement, not replace, fetched docs
-- **ALWAYS** implement fallback chain: Context7 → Document Retrieval → Web Search → Knowledge
+- **ONLY** proceed to Web Search if Context7 fails or returns no results
 
-**Validation Checkpoint**: Did you fetch documentation via Context7 (or fallback)? If code-related query and you didn't fetch docs, you MUST fetch them now.
+---
+
+#### Step 2: Web Search (MANDATORY IF CONTEXT7 FAILS)
+
+**CRITICAL**: If Context7 documentation fetching fails or returns insufficient results, you MUST attempt Web Search before using LLM knowledge.
+
+1. **Extract Search Terms**: From the user query, extract the most relevant search terms
+2. **Call Web Search**: Call `web_search` with:
+   - `search_term`: [primary keyword or full query]
+3. **Use Results**: Use web search results as PRIMARY SOURCE
+4. **ONLY** proceed to LLM knowledge if Web Search fails or returns no results
+
+---
+
+#### Step 3: LLM Knowledge (ONLY AS LAST RESORT)
+
+**CRITICAL**: LLM knowledge is STRICTLY FORBIDDEN until:
+- ✅ Context7 documentation fetching has been attempted AND failed/returned no results
+- ✅ Web Search has been attempted AND failed/returned no results
+- ✅ All external information sources have been exhausted
+
+**When Using LLM Knowledge**:
+- **ONLY** use it to supplement, not replace, fetched documentation
+- **ALWAYS** note that information may be outdated
+- **ALWAYS** prefer fetched documentation over LLM knowledge
+
+---
+
+**Validation Checkpoint**: Before using LLM knowledge, verify:
+- [ ] Context7 documentation fetching was attempted
+- [ ] Web Search was attempted
+- [ ] Both failed or returned insufficient results
+- [ ] Only then use LLM knowledge as last resort
 
 **DO NOT**:
-- ❌ Skip Context7 entirely
-- ❌ Use existing knowledge without attempting Context7 first
-- ❌ Not use fetched docs as PRIMARY SOURCE
+- ❌ Use LLM knowledge without attempting Context7 first
+- ❌ Use LLM knowledge without attempting Web Search first
+- ❌ Skip Context7 or Web Search steps
+- ❌ Use LLM knowledge as primary source when external sources are available
 
 ---
 
@@ -202,16 +260,22 @@ Before responding to the user, you MUST verify:
 - [ ] **Sub-Agents Loaded**: Matched sub-agents read and understood
 - [ ] **AST Parser Guides Read**: `tools/ast-parser-guide.md` and `tools/automatic-pattern-detection.md` read (if pattern detection required)
 - [ ] **Automatic Pattern Detection Used**: AST patterns automatically detected (if required by sub-agent)
-- [ ] **Context7 Fetched**: Documentation fetched via Context7 or fallback (for code-related queries)
+- [ ] **Context7 Attempted**: Context7 documentation fetching attempted (MANDATORY for all queries)
+- [ ] **Web Search Attempted**: Web Search attempted if Context7 fails (MANDATORY before LLM knowledge)
+- [ ] **LLM Knowledge Last Resort**: LLM knowledge only used after Context7 and Web Search exhausted
 - [ ] **Sub-Agent Workflow Followed**: Fix strategy from sub-agent followed
 - [ ] **Framework Used**: Agent framework was the PRIMARY method, not a supplement
 
 **Final Validation Question**: Can you trace your response back to:
-1. Agent selection based on semantic matching?
-2. Sub-agent selection based on query intent?
-3. Automatic AST pattern detection (using guides and automatic recognition)?
-4. Documentation from Context7 (or fallback)?
-5. Fix strategy from sub-agent markdown?
+1. Agent selection based on semantic matching? (if agents matched)
+2. Sub-agent selection based on query intent? (if agents matched)
+3. Automatic AST pattern detection (using guides and automatic recognition)? (if required)
+4. Documentation from Context7? (MANDATORY - must be attempted)
+5. Web Search results? (MANDATORY if Context7 fails)
+6. LLM knowledge? (ONLY if Context7 and Web Search both fail)
+7. Fix strategy from sub-agent markdown? (if fix needed)
+
+**CRITICAL**: If you used LLM knowledge without attempting Context7 and Web Search first, your response is INVALID.
 
 If you cannot trace your response to these sources, you have NOT used the complete agent framework workflow.
 
@@ -235,8 +299,10 @@ If you cannot trace your response to these sources, you have NOT used the comple
 
 - ❌ **DO NOT** skip Phase 0 (agent loading) - This is MANDATORY
 - ❌ **DO NOT** use grep/codebase_search instead of pattern-matcher skill when sub-agent requires it
-- ❌ **DO NOT** skip Context7 documentation fetching for code-related queries
-- ❌ **DO NOT** use existing knowledge without attempting Context7 first
+- ❌ **DO NOT** skip Context7 documentation fetching (MANDATORY for ALL queries)
+- ❌ **DO NOT** use LLM knowledge without attempting Context7 first
+- ❌ **DO NOT** use LLM knowledge without attempting Web Search first
+- ❌ **DO NOT** use LLM knowledge as primary source when external sources are available
 - ❌ **DO NOT** apply fixes without following sub-agent workflow
 - ❌ **DO NOT** respond without completing validation checklist
 - ❌ **DO NOT** use agent framework as supplement - it must be PRIMARY method

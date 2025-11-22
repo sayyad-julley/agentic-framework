@@ -1,0 +1,29 @@
+# Demo Zone Resources
+
+# Zone 1: US East
+apiVersion: kuma.io/v1alpha1
+kind: Zone
+metadata:
+  name: us-east
+  labels:
+    kuma.io/zone: us-east
+spec:
+  ingress:
+    address: 10.0.1.100:10001
+  controlPlane:
+    address: grpcs://kuma-zone-control-plane.kuma-system:5676
+
+---
+# Zone 2: EU West
+apiVersion: kuma.io/v1alpha1
+kind: Zone
+metadata:
+  name: eu-west
+  labels:
+    kuma.io/zone: eu-west
+spec:
+  ingress:
+    address: 10.0.2.100:10001
+  controlPlane:
+    address: grpcs://kuma-zone-control-plane-eu.kuma-system:5676
+

@@ -1,0 +1,45 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "name": "HMS Stack Documentation",
+  "theme": "maple",
+  "colors": {
+    "primary": "#0EA5E9"
+  },
+  "api": {
+    "playground": {
+      "display": "interactive"
+    },
+    "mdx": {
+      "server": "https://api.example.com/v1",
+      "auth": {
+        "method": "bearer"
+      }
+    }
+  },
+  "navigation": {
+    "groups": [
+      {
+        "group": "Getting Started",
+        "pages": [
+          "introduction",
+          "quickstart"
+        ]
+      },
+      {
+        "group": "API Reference",
+        "openapi": "openapi.yaml"
+      },
+      {
+        "group": "Components",
+        "pages": [
+          "components/overview",
+          "components/custom-demo"
+        ]
+      }
+    ]
+  },
+  "css": [
+    "custom.css"
+  ]
+}
+

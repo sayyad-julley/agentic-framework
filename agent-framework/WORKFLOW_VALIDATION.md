@@ -17,6 +17,16 @@
 
 ---
 
+### Phase 0.5: Query Intent Detection & Flow Routing (NEW - MANDATORY)
+
+- [ ] **Intent Classified**: Query intent determined (implementation/fix/both)
+- [ ] **Flow Selected**: Active flow determined (reactive/proactive/both)
+- [ ] **Flow Documented**: Reasoning for flow selection recorded
+
+**Validation**: Which flow(s) should be activated and why?
+
+---
+
 ## Query Processing Validation
 
 ### Phase 1: Semantic Query Matching
@@ -28,7 +38,41 @@
 - [ ] **Agent Selected**: Most relevant agent(s) chosen based on semantic understanding
 - [ ] **Match Documented**: Reasoning for agent selection recorded
 
-**Validation**: Which agent(s) did you match and why? If NO match found, document why and proceed with general workflow.
+**Validation**: Which agent(s) did you match and why? If NO match found, document why and proceed with fallback workflow.
+
+**CRITICAL FALLBACK: No Agent Match** (MANDATORY IF NO AGENTS MATCHED)
+
+If NO agents matched the query, you MUST complete the following fallback chain:
+
+**Step 1: Context7 Documentation Loading** (PRIMARY - MANDATORY):
+- [ ] **Problem Keywords Extracted**: 3-5 most relevant keywords extracted from query describing the issue
+- [ ] **Context7 Resolve Attempted**: `mcp_context7_resolve-library-id` called for each keyword
+- [ ] **Documentation Loaded**: If Context7 succeeded, `mcp_context7_get-library-docs` called with:
+  - `context7CompatibleLibraryID`: [resolved ID]
+  - `tokens`: 5000
+  - `topic`: [issue description]
+- [ ] **Documentation Reviewed**: Loaded docs reviewed for similar patterns, anti-patterns, known issues
+
+**Step 2: Web Search for Similar Patterns** (SECONDARY - if Context7 fails or insufficient):
+- [ ] **Web Search Attempted**: `web_search` called with issue-specific search terms:
+  - Variations: "[keyword] issue", "[keyword] bug", "[keyword] fix", "[keyword] pattern", "[keyword] solution"
+- [ ] **Search Results Reviewed**: Web search results analyzed for similar issues and solutions
+
+**Step 3: Pattern Analysis & Fix Application**:
+- [ ] **Similar Patterns Analyzed**: Context7 docs and/or web search results reviewed for similar issues/patterns
+- [ ] **Fix Strategy Extracted**: Fix strategies extracted from documentation and search results
+- [ ] **Pattern-Based Fix Applied**: Fixes applied based on discovered patterns from Context7 docs and/or web search
+- [ ] **Fix Validated**: Applied fix verified against code structure
+
+**Step 4: Final Fallback to LLM Knowledge** (TERTIARY - if Context7 and Web Search both fail):
+- [ ] **LLM Knowledge Used**: Existing knowledge used to identify similar patterns
+- [ ] **Fallback Documented**: Note that Context7 and Web Search were attempted first
+
+**Validation**: If no agent matched, did you:
+1. Load documentation via Context7?
+2. Search for similar patterns via Web Search?
+3. Apply fixes based on discovered patterns?
+4. Use LLM knowledge only as final fallback (with documentation that external sources were attempted)?
 
 ---
 
@@ -268,6 +312,165 @@ Before calling ANY tool (grep, codebase_search, etc.) for pattern detection:
 
 ---
 
+### Phase 6: Skill-Assisted Development Flow Validation (NEW - OPTIONAL)
+
+**CRITICAL**: This flow runs in parallel with existing reactive/proactive flows. It does NOT replace or modify them. This is an additive flow that provides skill-assisted guidance during code development.
+
+**When This Flow Activates**:
+- Query contains implementation/development keywords (implement, build, create, develop, setup, configure, integrate, etc.)
+- `agent-skills` agent is matched during Phase 1 (Semantic Query Matching)
+- Skill is selected from `skills-hms/` directory based on query
+
+**MANDATORY CHECKPOINTS**:
+- [ ] Query analyzed for implementation intent
+- [ ] `agent-skills` agent matched (Phase 1)
+- [ ] Skills discovered from `skills-hms/` directory
+- [ ] Skill metadata loaded (name, description from YAML frontmatter)
+- [ ] Skill selected based on keyword + semantic matching
+- [ ] Full skill content loaded (`SKILL.md` file)
+- [ ] Referenced resources/templates loaded (if applicable)
+- [ ] Interleaved guidance applied during code generation
+- [ ] Skill patterns/best practices applied
+- [ ] Skill workarounds implemented
+- [ ] Anti-patterns verified and avoided
+- [ ] Skill examples/templates used as guidance
+
+**VALIDATION QUESTIONS**:
+1. "Did you match `agent-skills` agent?" (YES/NO)
+2. "Which skill(s) were selected and why?" (Must list skill name(s) and scores)
+3. "Did you load full skill content (`SKILL.md`)?" (YES/NO)
+4. "Did you apply skill instructions during code generation (interleaved)?" (YES/NO)
+5. "Can you point to where skill patterns/best practices were applied?" (Must show examples)
+6. "Did you verify anti-patterns were avoided per skill guidelines?" (YES/NO)
+
+**IF SKILL SELECTED BUT NOT USED**: Skill-assisted development is INVALID. Return to Phase 6 and apply skill instructions during code generation.
+
+**Detailed Checklist**:
+
+**Step 1: Query Analysis**:
+- [ ] Intent extracted (what is user trying to build/implement?)
+- [ ] Keywords extracted (technical terms, library names, concepts)
+- [ ] Scope identified (what files/components need to be created or modified?)
+
+**Step 2: Agent Matching (Phase 1)**:
+- [ ] Query compared against `agent-skills` triggers and semanticKeywords
+- [ ] Agent capabilities verified (route, discover, select)
+- [ ] Confirmed this is implementation/development query, not fix query
+
+**Step 3: Skill Discovery**:
+- [ ] Skills directory scanned (`agent-framework/agents/agent-skills/skills-hms/`)
+- [ ] Skill metadata loaded (YAML frontmatter from each `SKILL.md`)
+- [ ] Keywords extracted from query (stop words removed)
+- [ ] Keyword matching performed (exact match, name contains, description contains)
+- [ ] Semantic matching performed (query intent vs skill description)
+- [ ] Combined scores calculated (keyword × 0.6 + semantic × 0.4)
+- [ ] Skill(s) selected (score > 5.0 threshold)
+
+**Step 4: Skill Loading**:
+- [ ] Full `SKILL.md` content read for selected skill(s)
+- [ ] Execution steps extracted
+- [ ] Proven patterns extracted
+- [ ] Best practices extracted
+- [ ] Workarounds extracted
+- [ ] Anti-patterns extracted
+- [ ] Examples and templates extracted
+- [ ] Referenced resources loaded (if applicable)
+
+**Step 5: Interleaved Code Generation**:
+
+**Before Code Block Validation**:
+- [ ] Skill instructions referenced from `SKILL.md` before code block
+- [ ] Patterns identified from skill's "Common Patterns" section
+- [ ] Best practices identified from skill's "Execution Steps" or "Best Practices" section
+- [ ] Anti-patterns noted from skill's "Anti-Patterns to Avoid" section
+- [ ] Workarounds reviewed from skill's "Workarounds" section (if applicable)
+- [ ] Examples/templates identified from skill for guidance
+
+**During Code Generation Validation**:
+- [ ] Patterns from skill applied as code is written
+- [ ] Best practices from skill followed in code structure
+- [ ] Workarounds implemented where "When" conditions are met
+- [ ] Skill examples/templates used as guidance for code structure
+- [ ] Execution steps from skill followed in order
+- [ ] Transformation rules from skill applied (if applicable)
+
+**After Code Block Validation**:
+- [ ] Each anti-pattern from skill's "Anti-Patterns to Avoid" section verified (not present)
+- [ ] Best practices from skill verified (correctly applied)
+- [ ] Patterns from skill verified (correctly implemented)
+- [ ] Workarounds verified (if applied, correctly implemented with documentation)
+- [ ] Code structure prevents anti-pattern occurrence
+
+**Pattern Extraction Validation**:
+- [ ] "Common Patterns" section extracted from skill (if present)
+- [ ] Pattern names, descriptions, and examples extracted
+- [ ] Pattern application conditions identified
+- [ ] Patterns mapped to code blocks being generated
+
+**Anti-Pattern Verification Validation**:
+- [ ] All anti-patterns from skill's "Anti-Patterns to Avoid" section checked
+- [ ] Each anti-pattern verified as not present in generated code
+- [ ] Patterns that might lead to anti-patterns checked
+- [ ] Resolution steps from skill applied if anti-pattern detected
+- [ ] Anti-pattern verification documented
+
+**Best Practices Application Validation**:
+- [ ] Applicable best practices identified from skill
+- [ ] Best practices applied during code generation
+- [ ] Best practices verified after code block
+- [ ] Best practices correctly implemented in code structure
+
+**Workaround Implementation Validation**:
+- [ ] "When" conditions for each workaround reviewed
+- [ ] Trade-offs and maintenance debt understood before applying
+- [ ] Workarounds implemented following skill's steps exactly
+- [ ] Workaround usage documented with maintenance implications
+
+**Continuous Reference Validation**:
+- [ ] Skill instructions referenced at each development step
+- [ ] Pattern compliance maintained throughout development
+- [ ] Anti-pattern prevention active during implementation
+- [ ] Workaround documentation maintained if workarounds used
+
+**Validation**: Did you complete all Phase 6 steps? If skill was selected but instructions were not applied during code generation, you MUST redo using interleaved guidance pattern.
+
+**Reference**: See `agent-framework/.cursorrules` for detailed Phase 6 workflow. See `agent-framework/agents/agent-skills/SKILL_DISCOVERY.md` for skill discovery algorithm.
+
+---
+
+### Reactive Flow Validation (NEW)
+
+- [ ] **R1 Completed**: Query matched to agent(s) semantically (OR R1-Fallback completed if no agent matched)
+- [ ] **R1-Fallback Completed** (if no agent matched):
+  - [ ] Context7 docs loaded
+  - [ ] Web Search for similar patterns attempted
+  - [ ] LLM knowledge used only as final fallback (with documentation)
+- [ ] **R2 Completed**: Sub-agents discovered and loaded (OR skipped if no agent matched)
+- [ ] **R3 Completed**: Sub-agent(s) selected based on query intent (OR pattern discovery from Context7/web search)
+- [ ] **R4 Completed**: Patterns detected using pattern-matcher (OR pattern analysis from Context7 docs/web search)
+- [ ] **R5 Completed**: Documentation fetched via Context7 (OR Web Search if Context7 failed)
+- [ ] **R6 Completed**: Fix applied following sub-agent workflow (OR fix applied based on discovered patterns)
+
+**Validation**: Did you complete all Reactive Flow steps? (R1-R6, or R1-Fallback → R3-R6 if no agent matched)
+
+---
+
+### Proactive Flow Validation (NEW)
+
+- [ ] **P1 Completed**: Target files identified
+- [ ] **P2 Completed**: Agents activated based on file patterns
+- [ ] **P3 Completed**: Sub-agents loaded for proactive mode
+- [ ] **P4-P6 Interleaved**: Agents/sub-agents/skills used DURING code generation?
+- [ ] **P4 Completed**: Real-time pattern detection for each code chunk
+- [ ] **P5 Completed**: Documentation fetched via Context7 (when issues detected)
+- [ ] **P6 Completed**: Immediate fixes applied during code generation
+- [ ] **Real-Time Detection**: Pattern detection happens for each code chunk?
+- [ ] **Immediate Fixes**: Fixes applied before continuing to next chunk?
+
+**Validation**: Did you complete all Proactive Flow steps? (P1-P6, with P4-P6 interleaved during code generation)
+
+---
+
 ## Pre-Response Validation
 
 Before responding to the user, verify:
@@ -279,6 +482,7 @@ Before responding to the user, verify:
 - [ ] **Automatic Pattern Detection Used**: AST patterns automatically detected (if required by sub-agent)
 - [ ] **Context7 Fetched**: Documentation fetched via Context7 or fallback (for code-related queries)
 - [ ] **Sub-Agent Workflow Followed**: Fix strategy from sub-agent followed
+- [ ] **Phase 6 Completed** (if applicable): Skill-assisted development flow completed with interleaved guidance
 - [ ] **Framework Used**: Agent framework was the PRIMARY method, not a supplement
 
 **Pattern-Matcher Workflow Check** (MANDATORY if sub-agent requires pattern-matcher):
@@ -296,13 +500,13 @@ Can you trace your pattern detection to:
 **IF ANY ANSWER IS NO**: Response is INVALID. Return to Phase 3 and follow pattern-matcher workflow.
 
 **Final Validation Question**: Can you trace your response back to:
-1. Agent selection based on semantic matching?
-2. Sub-agent selection based on query intent?
-3. Automatic AST pattern detection (using guides and automatic mental analysis)?
-4. Documentation from Context7 (or fallback)?
-5. Fix strategy from sub-agent markdown?
+1. Agent selection based on semantic matching? (OR Context7 docs loading → Web Search → LLM knowledge if no agent matched)
+2. Sub-agent selection based on query intent? (OR pattern discovery from Context7 docs/web search if no agent matched)
+3. Automatic AST pattern detection (using guides and automatic mental analysis)? (OR pattern analysis from Context7 docs/web search)
+4. Documentation from Context7 (loaded first), then Web Search (if Context7 fails), then LLM knowledge (final fallback)?
+5. Fix strategy from sub-agent markdown? (OR fix strategy from Context7 docs/web search/LLM knowledge if no agent matched)
 
-If you cannot trace your response to these sources, you have NOT used the complete agent framework workflow.
+If you cannot trace your response to these sources, you have NOT used the complete agent framework workflow (including fallback when no agents match).
 
 ---
 
@@ -320,6 +524,7 @@ If you cannot trace your response to these sources, you have NOT used the comple
 - Use existing knowledge without attempting Context7 first
 - Apply fixes without following sub-agent workflow
 - Respond without completing validation checklist
+- **Skip fallback when no agents match** - MUST use Context7 to load docs → Web Search for patterns → LLM knowledge as final fallback (NEW - CRITICAL)
 
 ### ✅ DO:
 - Always complete Phase 0 first
@@ -333,6 +538,7 @@ If you cannot trace your response to these sources, you have NOT used the comple
 - Always attempt Context7 before using existing knowledge
 - Always follow sub-agent fix workflows
 - Always validate before responding
+- **Always use Context7 → Web Search → LLM knowledge fallback chain when no agents match** (NEW - MANDATORY)
 
 ---
 
@@ -346,6 +552,8 @@ If you cannot trace your response to these sources, you have NOT used the comple
 5. `agent-framework/skills/pattern-matcher.md` (Phase 3, if needed)
 6. `agent-framework/tools/ast-parser-guide.md` (Phase 3, if AST patterns required)
 7. `agent-framework/tools/automatic-pattern-detection.md` (Phase 3, if AST patterns required)
+8. `agent-framework/agents/agent-skills/skills-hms/[skill-name]/SKILL.md` (Phase 6, if agent-skills matched)
+9. `agent-framework/agents/agent-skills/SKILL_DISCOVERY.md` (Phase 6, for skill discovery algorithm)
 
 **Required Tool Calls**:
 1. `read_file` (Phase 3, automatic - for reading code files)

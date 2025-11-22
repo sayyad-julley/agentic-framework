@@ -1,0 +1,72 @@
+# Pattern 1: Global Control Plane Configuration
+# Global CP serves as central policy configuration hub
+# Accepts connections only from Zone CPs (not from Data Planes)
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kuma-global-system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kuma-global-control-plane
+  namespace: kuma-global-system
+  labels:
+    app: kuma-global-control-plane
+spec:
+  replicas: 3  # Odd number for quorum (3 or 5 recommended)
+  selector:
+    matchLabels:
+      app: kuma-global-control-plane
+  template:
+    metadata:
+      labels:
+        app: kuma-global-control-plane
+    spec:
+      containers:
+      - name: kuma-cp
+        image: kong/kuma-cp:2.6.0
+        ports:
+        - containerPort: 5681  # GUI
+        - containerPort: 5682  # API
+        - containerPort: 5676  # Zone CP connections only
+        env:
+        - name: KUMA_MODE
+          value: "global"
+        - name: KUMA_STORE_TYPE
+          value: "kubernetes"
+        - name: KUMA_RUNTIME_KUBERNETES_INJECTOR_CNI_ENABLED
+          value: "false"
+        # Network isolation: Only accept Zone CP connections
+        # Data Planes cannot connect directly to Global CP
+        - name: KUMA_GENERAL_TLS_CP_SERVER_ENABLED
+          value: "true"
+        resources:
+          requests:
+            cpu: 4
+            memory: 2Gi
+          limits:
+            cpu: 8
+            memory: 4Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kuma-global-control-plane
+  namespace: kuma-global-system
+spec:
+  selector:
+    app: kuma-global-control-plane
+  ports:
+  - name: api
+    port: 5682
+    targetPort: 5682
+  - name: zone-cp
+    port: 5676
+    targetPort: 5676
+  - name: gui
+    port: 5681
+    targetPort: 5681
+  type: ClusterIP
+

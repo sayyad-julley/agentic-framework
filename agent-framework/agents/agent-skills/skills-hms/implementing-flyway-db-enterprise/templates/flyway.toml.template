@@ -1,0 +1,23 @@
+[flyway]
+# Global defaults
+default-schema = "public"
+locations = ["classpath:db/migration/common"]
+
+[environments.dev]
+url = "jdbc:postgresql://dev.internal:5432/myapp_dev"
+user = "dev_flyway_user"
+password = "${DEV_PASS}"
+
+[environments.staging]
+url = "jdbc:postgresql://stg.internal:5432/myapp_stg"
+user = "stg_flyway_user"
+password = "${STG_PASS}"
+# Environment-specific location override to include seed data for testing
+locations = ["classpath:db/migration/common", "classpath:db/migration/seed_data"]
+
+[environments.production]
+url = "jdbc:postgresql://prod.internal:5432/myapp_prod"
+user = "prod_flyway_user"
+password = "${PROD_PASS}"
+locations = ["classpath:db/migration/common"]
+

@@ -45,6 +45,15 @@ context7:
     - useEffect
     - useState
   fetchStrategy: on-demand
+proactiveMode:
+  enabled: true
+  triggers:
+    - filePatterns: ["*.tsx", "*.ts", "*.jsx", "*.js"]
+    - componentCreation: true
+    - reactComponents: true
+    - nextjsPages: true
+  autoScan: true
+  autoFix: true
 ---
 
 # Hydration Agent
@@ -92,14 +101,27 @@ This agent includes the following sub-agents:
    - Removes "use client" from page/layout files
    - Uses pattern-matcher skill for regex pattern matching
 
-## Usage
+## Reactive Flow Usage
 
-The agent is automatically activated when queries contain hydration-related keywords such as:
-- "hydration error"
-- "hydration mismatch"
-- "client component issue"
-- "window access in render"
-- "dialog reopening"
+This agent activates in reactive mode when queries contain:
+- "fix hydration error"
+- "solve hydration mismatch"
+- "resolve client component issue"
+- "fix window access in render"
+- "fix dialog reopening"
+
+## Proactive Flow Usage
+
+This agent automatically activates in proactive mode when:
+- Creating React/Next.js components (*.tsx, *.ts, *.jsx, *.js)
+- Adding "use client" directives
+- Creating dialogs or modals
+- Accessing window/document objects
+
+**Proactive Behavior**:
+- Scans newly created code for hydration anti-patterns
+- Applies fixes automatically before issues occur
+- Prevents common hydration mistakes during implementation
 
 ## Detection Strategy
 

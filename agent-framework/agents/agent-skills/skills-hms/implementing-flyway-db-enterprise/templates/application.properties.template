@@ -1,0 +1,13 @@
+# Application Runtime Configuration (DML only user for the operational application)
+spring.datasource.url=${DB_URL}
+spring.datasource.username=app_read_write_user
+spring.datasource.password=${APP_PASSWORD}
+
+# Flyway Configuration (Dedicated DDL user, secured via a secret vault)
+spring.flyway.url=${DB_URL}
+spring.flyway.user=flyway_migration_user
+spring.flyway.password=${FLYWAY_PASSWORD}
+
+# Migration Script Locations (Leveraging active Spring profile for data separation)
+spring.flyway.locations=classpath:db/migration/common,classpath:db/migration/${spring.profiles.active}
+

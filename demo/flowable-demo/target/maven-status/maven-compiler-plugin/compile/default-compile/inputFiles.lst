@@ -1,0 +1,9 @@
+/Users/julley/HMS-stack/flowable-demo/src/main/java/com/example/flowable/examples/ExplicitScriptVariablesExample.java
+/Users/julley/HMS-stack/flowable-demo/src/main/java/com/example/flowable/examples/TransientVariablesExample.java
+/Users/julley/HMS-stack/flowable-demo/src/main/java/com/example/flowable/monitoring/JobExecutorMonitor.java
+/Users/julley/HMS-stack/flowable-demo/src/main/java/com/example/flowable/delegates/TransientVariableDelegate.java
+/Users/julley/HMS-stack/flowable-demo/src/main/java/com/example/flowable/delegates/AsyncJoinMarkerDelegate.java
+/Users/julley/HMS-stack/flowable-demo/src/main/java/com/example/flowable/examples/ParallelJoinAsyncExample.java
+/Users/julley/HMS-stack/flowable-demo/src/main/java/com/example/flowable/delegates/ParallelTask2Delegate.java
+/Users/julley/HMS-stack/flowable-demo/src/main/java/com/example/flowable/examples/JobExecutorMonitorExample.java
+/Users/julley/HMS-stack/flowable-demo/src/main/java/com/example/flowable/delegates/ParallelTask1Delegate.java

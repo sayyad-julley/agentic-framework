@@ -1,0 +1,76 @@
+<!-- Event Registry for EDA: Event-Driven Architecture Integration -->
+<!-- Channel Definition: Outbound Event Channel (JMS) -->
+
+{
+  "key": "outboundCustomerEvent",
+  "category": "channel",
+  "name": "Customer Notification Channel",
+  "channelType": "outbound",
+  "type": "jms",
+  "destination": "outbound-customer-queue",
+  "serializerType": "json"
+}
+
+<!-- Event Definition: Customer Created Event -->
+<!--
+{
+  "key": "customerCreated",
+  "category": "event",
+  "name": "Customer Created Event",
+  "payloadType": "json",
+  "correlationKeys": [
+    {
+      "name": "customerId",
+      "type": "string"
+    }
+  ]
+}
+-->
+
+<!-- BPMN Start Event: Process Initiation -->
+<!--
+<startEvent id="customerCreatedStart">
+  <eventDefinition>
+    <flowable:eventType>customerCreated</flowable:eventType>
+  </eventDefinition>
+</startEvent>
+-->
+
+<!-- BPMN Boundary Event: In-Flight Correlation -->
+<!--
+<serviceTask id="processOrder" name="Process Order"/>
+<boundaryEvent id="orderUpdatedEvent" attachedToRef="processOrder">
+  <eventDefinition>
+    <flowable:eventType>orderUpdated</flowable:eventType>
+  </eventDefinition>
+</boundaryEvent>
+-->
+
+<!-- Alternative: Kafka Channel Definition -->
+<!--
+{
+  "key": "kafkaOrderEvents",
+  "category": "channel",
+  "name": "Kafka Order Events Channel",
+  "channelType": "outbound",
+  "type": "kafka",
+  "topic": "order-events",
+  "bootstrapServers": "kafka-broker1:9092,kafka-broker2:9092",
+  "serializerType": "avro",
+  "schemaRegistryUrl": "http://schema-registry:8081"
+}
+-->
+
+<!-- Inbound Channel: Process Initiation from External System -->
+<!--
+{
+  "key": "inboundOrderEvents",
+  "category": "channel",
+  "name": "Inbound Order Events",
+  "channelType": "inbound",
+  "type": "jms",
+  "destination": "inbound-orders-queue",
+  "deserializerType": "json"
+}
+-->
+

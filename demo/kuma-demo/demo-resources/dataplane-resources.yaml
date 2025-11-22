@@ -1,0 +1,98 @@
+# Demo Data Plane Resources
+# Note: These are Universal mode data plane definitions
+# Actual data planes need kuma-dp running, but these show the configuration
+
+# Data Plane 1: Frontend Service
+apiVersion: kuma.io/v1alpha1
+kind: Dataplane
+metadata:
+  name: frontend-dp
+  mesh: default
+  labels:
+    kuma.io/service: frontend
+spec:
+  networking:
+    address: 192.168.1.10
+    inbound:
+    - port: 8080
+      servicePort: 80
+      tags:
+        kuma.io/service: frontend
+        kuma.io/protocol: http
+        version: v1
+        env: production
+
+---
+# Data Plane 2: Backend Service
+apiVersion: kuma.io/v1alpha1
+kind: Dataplane
+metadata:
+  name: backend-dp
+  mesh: default
+  labels:
+    kuma.io/service: backend
+spec:
+  networking:
+    address: 192.168.1.20
+    inbound:
+    - port: 8080
+      servicePort: 80
+      tags:
+        kuma.io/service: backend
+        kuma.io/protocol: http
+        version: v1
+        env: production
+
+---
+# Data Plane 3: Payment Service
+apiVersion: kuma.io/v1alpha1
+kind: Dataplane
+metadata:
+  name: payment-dp
+  mesh: default
+  labels:
+    kuma.io/service: payment
+spec:
+  networking:
+    address: 192.168.1.30
+    inbound:
+    - port: 8080
+      servicePort: 80
+      tags:
+        kuma.io/service: payment
+        kuma.io/protocol: http
+        version: v2
+        env: production
+
+---
+# Zone Ingress for US East
+apiVersion: kuma.io/v1alpha1
+kind: ZoneIngress
+metadata:
+  name: zone-ingress-us-east
+  mesh: default
+  labels:
+    kuma.io/zone: us-east
+spec:
+  networking:
+    address: 10.0.1.100
+    port: 10001
+    advertisedAddress: zone-ingress-us-east.kuma-system.svc.cluster.local
+    advertisedPort: 10001
+
+---
+# Zone Ingress for EU West
+apiVersion: kuma.io/v1alpha1
+kind: ZoneIngress
+metadata:
+  name: zone-ingress-eu-west
+  mesh: default
+  labels:
+    kuma.io/zone: eu-west
+spec:
+  networking:
+    address: 10.0.2.100
+    port: 10001
+    advertisedAddress: zone-ingress-eu-west.kuma-system.svc.cluster.local
+    advertisedPort: 10001
+

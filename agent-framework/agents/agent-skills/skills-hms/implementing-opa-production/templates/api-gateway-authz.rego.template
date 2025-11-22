@@ -1,0 +1,18 @@
+package gateway.authz
+
+default allow = false
+
+[_, payload, _] := io.jwt.decode(input.token)
+
+deny[msg] {
+    payload.iss != input.expected_issuer
+    msg := "Invalid token issuer"
+}
+
+allow {
+    not deny
+    payload.role == "admin"
+    input.path == ["v1", "admin"]
+    input.method == "POST"
+}
+

@@ -1,0 +1,63 @@
+<!-- Transient Variable Doctrine: Java Delegate Pattern -->
+<!-- Use transient variables for temporary data, persistent for audit-critical -->
+
+import org.flowable.engine.delegate.DelegateExecution;
+import org.flowable.engine.delegate.JavaDelegate;
+
+public class FetchDataServiceTask implements JavaDelegate {
+  
+  @Override
+  public void execute(DelegateExecution execution) {
+    // Retrieve configuration
+    String endpoint = (String) execution.getVariable("serviceEndpoint");
+    
+    // Execute REST call
+    RestResponse restResponse = executeRestCall(endpoint);
+    
+    // CRITICAL: Set status as transient for immediate conditional routing
+    // This variable is garbage-collected at next wait state
+    execution.setTransientVariable("status", restResponse.getStatus());
+    
+    // Persist only essential business data if call succeeded
+    if (restResponse.getStatus() == 200) {
+      Object parsedData = parse(restResponse.getBody());
+      execution.setVariable("parsedData", parsedData); // Persistent for audit
+    }
+    
+    // Transient variables can be used in UEL conditions immediately:
+    // ${status == 200} in conditional sequence flow
+  }
+  
+  private RestResponse executeRestCall(String endpoint) {
+    // Implementation: HTTP client call
+    return new RestResponse();
+  }
+  
+  private Object parse(String body) {
+    // Implementation: Parse response body
+    return new Object();
+  }
+}
+
+<!-- BPMN Conditional Sequence Flow Using Transient Variable -->
+<!--
+<exclusiveGateway id="checkStatus" name="Check API Status"/>
+<sequenceFlow id="flowToApproved" sourceRef="checkStatus" targetRef="approvedTask">
+  <conditionExpression xsi:type="tFormalExpression">${status == 200}</conditionExpression>
+</sequenceFlow>
+<sequenceFlow id="flowToRejected" sourceRef="checkStatus" targetRef="rejectionTask">
+  <conditionExpression xsi:type="tFormalExpression">${status != 200}</conditionExpression>
+</sequenceFlow>
+-->
+
+<!-- Anti-Pattern: Data Hoarding -->
+<!--
+// ❌ DO NOT DO THIS:
+execution.setVariable("fullApiResponse", largeJsonResponse); // Bloats database
+execution.setVariable("binaryDocument", documentBytes); // Causes lock contention
+
+// ✅ DO THIS INSTEAD:
+execution.setTransientVariable("apiStatus", response.getStatus()); // Temporary
+execution.setVariable("documentId", documentId); // Only reference
+-->
+

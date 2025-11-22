@@ -1,0 +1,11 @@
+com/example/flowable/delegates/ParallelTask2Delegate.class
+com/example/flowable/examples/ParallelJoinAsyncExample.class
+com/example/flowable/delegates/AsyncJoinMarkerDelegate.class
+com/example/flowable/monitoring/JobExecutorMonitor$JobStatistics.class
+com/example/flowable/examples/TransientVariablesExample.class
+com/example/flowable/delegates/TransientVariableDelegate$RestResponse.class
+com/example/flowable/examples/JobExecutorMonitorExample.class
+com/example/flowable/delegates/ParallelTask1Delegate.class
+com/example/flowable/examples/ExplicitScriptVariablesExample.class
+com/example/flowable/delegates/TransientVariableDelegate.class
+com/example/flowable/monitoring/JobExecutorMonitor.class

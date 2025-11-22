@@ -1,0 +1,68 @@
+# Pattern 3: Kong Gateway as Delegated Gateway
+# External API gateway handles perimeter security
+# Kuma manages internal service-to-service traffic
+
+apiVersion: kuma.io/v1alpha1
+kind: Dataplane
+metadata:
+  name: kong-gateway
+  namespace: kuma-system
+  labels:
+    kuma.io/service: kong-gateway
+spec:
+  networking:
+    # Kong gateway is a delegated gateway
+    gateway:
+      type: DELEGATED
+    address: 10.0.0.100
+    inbound:
+    - port: 8000
+      tags:
+        kuma.io/service: kong-gateway
+        kuma.io/protocol: http
+    - port: 8443
+      tags:
+        kuma.io/service: kong-gateway
+        kuma.io/protocol: https
+---
+# Kong Gateway Deployment (example)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kong-gateway
+  namespace: kuma-system
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: kong-gateway
+  template:
+    metadata:
+      labels:
+        app: kong-gateway
+        kuma.io/service: kong-gateway
+      annotations:
+        kuma.io/sidecar-injection: enabled
+    spec:
+      containers:
+      - name: kong
+        image: kong:3.4
+        ports:
+        - containerPort: 8000
+        - containerPort: 8443
+        env:
+        - name: KONG_DATABASE
+          value: "off"
+        - name: KONG_DECLARATIVE_CONFIG
+          value: "/kong/kong.yml"
+        - name: KONG_PROXY_ACCESS_LOG
+          value: /dev/stdout
+        - name: KONG_ADMIN_ACCESS_LOG
+          value: /dev/stdout
+        - name: KONG_PROXY_ERROR_LOG
+          value: /dev/stderr
+        - name: KONG_ADMIN_ERROR_LOG
+          value: /dev/stderr
+        - name: KONG_ADMIN_LISTEN
+          value: "0.0.0.0:8001"
+
