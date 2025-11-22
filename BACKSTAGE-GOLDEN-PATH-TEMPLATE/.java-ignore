@@ -1,0 +1,4 @@
+# Ignore skeleton directory - these are Nunjucks templates, not actual Java source
+skeleton/
+
+

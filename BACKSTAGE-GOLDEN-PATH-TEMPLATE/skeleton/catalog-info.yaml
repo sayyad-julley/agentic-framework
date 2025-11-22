@@ -1,0 +1,63 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: ${{ values.serviceName }}
+  description: ${{ values.description }}
+  
+  # === ANNOTATIONS: The SDLC Integration ===
+  annotations:
+    # 1. Links to the Git repo (powers CI/CD, Code Coverage, etc.)
+    github.com/project-slug: ${{ values.repoUrl | parseRepoUrl | pick('owner') }}/${{ values.repoUrl | parseRepoUrl | pick('repo') }}
+    
+    # 2. Test & Secure (SonarQube, Snyk)
+    sonarqube.org/project-key: ${{ values.serviceName }}
+    # snyk.io/project-ids: '...' # Often provisioned and added later
+    
+    # 3. Deploy (ArgoCD, Kubernetes)
+    argocd/app-name: ${{ values.serviceName }}
+    backstage.io/kubernetes-id: ${{ values.serviceName }}
+    
+    # 4. Operate (PagerDuty, Grafana)
+    pagerduty.com/service-id: ${{ values.serviceName }} # Or an integration key
+    grafana/dashboard-selector: 'app="${{ values.serviceName }}"'
+    
+    # 5. Conditional Annotations
+    {% if values.includeKafkaConsumer %}
+    # Powers the Backstage Kafka Plugin
+    kafka.apache.org/consumer-groups: "${{ values.kafkaGroupId }}"
+    {% endif %}
+
+spec:
+  type: service
+  lifecycle: experimental
+  owner: ${{ values.owner }}
+  system: ${{ values.system }}
+  
+  # === RELATIONSHIPS: The Dependency Graph ===
+  dependsOn:
+    # All services depend on ScaleKit and Postgres
+    - api:default/scalekit
+    - resource:default/postgres-${{ values.postgresDbName }}
+
+    {% if values.includeFlowable %}
+    # This service consumes a Kafka topic
+    - resource:default/kafka-${{ values.flowableKafkaTopic }}
+    {% endif %}
+    
+    {% if values.includeKafkaConsumer %}
+    # This service consumes a Kafka topic
+    - resource:default/kafka-${{ values.kafkaTopicName }}
+    # This service depends on a Redis instance
+    - resource:default/redis-hms-cache 
+    {% endif %}
+    
+    {% if values.includeOutbox %}
+    # This service produces events to topics (via Debezium)
+    # This is a declared dependency, even if indirect.
+    # We would need a parameter to list the topics it produces to.
+    # - resource:default/kafka-customer-events 
+    {% endif %}
+    
+  consumesApi:
+    - api:default/scalekit
+

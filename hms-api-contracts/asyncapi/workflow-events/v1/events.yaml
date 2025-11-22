@@ -1,0 +1,21 @@
+asyncapi: '2.6.0'
+info:
+  title: HMS Workflow Events
+  version: 1.0.0
+  description: Outbound onboarding lifecycle events published on Kafka.
+channels:
+  onboarding.events:
+    subscribe:
+      summary: Workflow engine publishes onboarding lifecycle updates.
+      message:
+        name: OnboardingStatusChanged
+        payload:
+          type: object
+          required: [processId, status]
+          properties:
+            processId:
+              type: string
+              format: uuid
+            status:
+              type: string
+              enum: [PENDING, STARTED, COMPLETED, FAILED]

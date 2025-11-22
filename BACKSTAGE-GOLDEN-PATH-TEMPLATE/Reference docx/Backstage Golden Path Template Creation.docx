@@ -1,0 +1,357 @@
+
+A Principal Engineer's Guide to Backstage Golden Paths for a Composable SaaS Architecture
+
+##: From Defined Architecture to Actionable Golden Paths
+This document serves as an end-to-end technical implementation guide for creating Backstage Golden Path templates for the specified SaaS architecture. Backstage is an open-source framework for building developer portals, operating via a centralized software catalog.1 Its Software Templates feature 2 is the primary execution engine for establishing "Golden Paths".3
+The defined stack—Spring Boot 3.2, Java 17, Flowable, Kafka, Redis, and PostgreSQL—is not a simple microservice; it is a sophisticated, event-driven, and stateful architecture. The purpose of a Golden Path, in this context, is to manage this complexity, reduce cognitive load, and ensure that when a developer spins up a new service, it automatically adheres to the organization's best practices for security, observability, and, most importantly, inter-service communication.5
+A simplistic template that scaffolds a "Hello World" Spring Boot application 3 is insufficient for this requirement. The core challenge is to templatize the patterns that this stack enables:
+	•	Event-driven workflows (Flowable + Kafka)
+	•	High-throughput caching (Redis)
+	•	Reliable messaging patterns (Transactional Outbox)
+	•	Scalable read/write models (CQRS)
+A novice approach would be to create a template with a series of checkboxes: "Include Flowable?", "Include Kafka?", etc. This approach, however, increases cognitive load 5 because the developer must now understand how to wire these components together. The "Golden Path" must be the easiest path.4 Therefore, the template's user interface must abstract these choices. Instead of asking "Do you need Kafka and Redis?", the template should ask, "Are you building a CQRS read-side projector?".9 If the answer is "yes," the template knows this implies a Kafka consumer and a Redis writer, and it scaffolds the correct dependencies and configuration for that pattern. The template's job is to scaffold solutions, not just technologies.
+This report provides the high-level strategy and low-level code necessary to build a template (or set of templates) that achieves this, moving from the user-facing template.yaml design to the dynamic code generation within the skeleton/ directory.
+
+I. Strategic Foundations: Monolithic vs. Composable Template Design
+
+Before any YAML is authored, a critical strategic decision must be made. The complexity of this stack invalidates a "one-size-fits-all" template. The choice is between a single, highly complex template or a "composable" ecosystem of templates.
+
+A. The Monolithic Template: The "One-Ring" Fallacy
+
+A monolithic template attempts to scaffold every possible permutation of the stack from a single template.yaml and a single skeleton/. While it offers a single entry point for developers, this approach is directly analogous to monolithic plugin architecture, which suffers from significant drawbacks in complex environments.11
+	•	Scalability: As new patterns or options are added, the template.yaml becomes exponentially complex and unmanageable.11
+	•	Maintainability: A change to one small part (e.g., updating the Redis configuration) requires testing the entire, complex template.
+	•	Developer Experience: The developer is presented with a "wizard" of dozens of questions, most of which are irrelevant to their specific task. This violates the primary Golden Path goal of reducing cognitive load.5
+
+B. The Composable Template: A "Platform as a Product" Approach
+
+A composable or modular strategy involves creating multiple, smaller, "best-of-breed" templates 13 that work in concert.
+	•	Pros: This model aligns with the benefits of modular plugins, offering independent development (the "Flowable Workflow" template can be tested in isolation from the "CQRS Projector" template) 11, simplified CI/CD for template updates 11, and the flexibility to add new patterns without disrupting existing ones.11
+	•	Cons: This strategy requires a more sophisticated integration approach.13 The base Backstage fetch:template action 2 is designed for creating new repositories, not modifying existing ones.
+
+C. Recommendation: The "Composable-Monolithic" Hybrid Strategy
+
+While a truly modular ecosystem is ideal, the Backstage scaffolder's primary model is "create new".2 Writing custom actions to "apply" templates to existing repositories is a significant, high-effort engineering task.
+A more pragmatic "Golden Path" is to implement a "Composable-Monolithic" hybrid. This approach uses a single template.yaml that feels composable to the end-user. The template guides the developer through a pattern-based wizard, using advanced conditional logic (dependencies and oneOf) to reveal only the relevant questions for their chosen pattern. The skeleton/ directory remains monolithic (containing all possible code snippets and files), but it is heavily gated with Nunjucks conditionals. This strategy provides the user experience of composition with the technical implementation of a single, maintainable template.
+
+D. Valuable Table 1: Template Strategy Analysis
+
+The following table formalizes the pros and cons of these approaches and the rationale for the hybrid recommendation.
+
+Strategy
+Description
+Pros
+Cons
+Recommendation
+Monolithic Template
+A single template.yaml and skeleton/ directory that handles all logic and file permutations.
+All logic is centralized in one place; single entry point for all developers.
+Becomes exponentially complex and unmanageable; difficult to scale or maintain.11 High cognitive load for developers.5
+Not Recommended.
+Composable Template Ecosystem
+Multiple, small, single-purpose templates (e.g., create-base-service, add-flowable, add-kafka-consumer).
+Highly modular, scalable, and maintainable.11 Aligns with "best-of-breed" philosophy.13
+Requires complex custom scaffolder actions to "apply" templates to existing components. The default fetch actions do not support this well.2
+Ideal, but high-effort.
+Composable-Monolithic (Hybrid)
+A single template.yaml that uses pattern-based UI logic (oneOf) to present a composable experience. The skeleton/ is monolithic but uses Nunjucks to conditionally render files.
+Achieves the desired developer experience (low cognitive load) without requiring custom actions. Balances maintainability and capability.
+skeleton/ directory can become large, but Nunjucks logic remains simple (e.g., {% if... %}).
+Recommended Path.
+
+II. Part 1: Authoring the template.yaml — The Dynamic User-Facing Scaffolder
+
+The template.yaml defines the user-facing form that developers interact with.14 For this stack, its primary purpose is to implement the "Composable-Monolithic" strategy. It will ask high-level "pattern" questions and use conditional logic to reveal specific inputs. The UI is built using react-jsonschema-form.18
+
+A. Anatomy of the template.yaml (v1beta3)
+
+The file is a kind: Template entity, registered in the Backstage Software Catalog.16
+	•	spec.parameters: Defines the multi-step UI form presented to the user.15
+	•	spec.steps: Defines the backend actions (e.g., fetch code, publish to GitHub, register in catalog) that are executed.2
+	•	spec.output: Defines the links shown to the user upon successful scaffolding (e.g., "View in Catalog," "View Repository").21
+
+B. Step 1: Base Parameters (The First Page)
+
+This page should collect the universal metadata required for any new service.
+
+YAML
+
+
+apiVersion: scaffolder.backstage.io/v1beta3kind: Templatemetadata:  name: spring-boot-saas-template  title: Spring Boot SaaS Service  description: A Golden Path template for creating event-driven Spring Boot servicesspec:  owner: platform-team  type: service  parameters:    - title: Base Service Details      required:        - serviceName        - owner        - postgresDbName      properties:        serviceName:          title: Service Name          type: string          description: Unique name of the component (e.g., customer-onboarding-svc)          ui:autofocus: true          pattern: '^([a-z][a-z0-9]*)(-[a-z0-9]+)*$'          ui:help: 'Must be kebab-case and start with a letter.'        owner:          title: Owner          type: string          description: The owning team/group for this component          ui:field: OwnerPicker          ui:options:            catalogFilter:              kind: Group        postgresDbName:          title: PostgreSQL Database Name          type: string          description: The name of the PostgreSQL database to use.    - title: Repository Location      required:        - repoUrl      properties:        repoUrl:          title: Repository Location          type: string          ui:field: RepoUrlPicker          ui:options:            allowedHosts:              - github.com              - gitlab.com
+This first step uses built-in UI components like OwnerPicker 15 and RepoUrlPicker 15 to provide a rich user experience, and a pattern regex 22 for validation.
+
+C. Step 2: The Pattern Selector (The Core Logic)
+
+This page implements the "composable" logic. Instead of multiple booleans, a single enum (rendered as a dropdown) forces the user to select their "Golden Path".18 This choice will dictate all subsequent steps.
+
+YAML
+
+
+    - title: Select Service Pattern      required:        - servicePattern      properties:        servicePattern:          title: What is the primary pattern for this service?          type: string          default: simple-web-service          enum:            - simple-web-service            - event-driven-workflow            - kafka-consumer            - cqrs-read-projector          enumNames:            - 'Simple REST API (Spring Boot + Postgres)'            - 'Event-Driven Workflow (Flowable + Kafka + Postgres)'            - 'Kafka Consumer Service (Kafka + Postgres)'            - 'CQRS Read-Side Projector (Kafka Consumer + Redis)'      # The dependencies block will be used to show/hide fields      dependencies:        ... 
+
+D. Step 3: Dynamic Inputs via dependencies and oneOf
+
+The dependencies keyword 18 allows the template to dynamically show or hide fields based on the answer to a previous field. The oneOf keyword 18 is the correct construct within dependencies to create mutually exclusive forms based on the servicePattern selection.
+This is the full implementation of the dependencies block from Step 2:
+
+YAML
+
+
+      dependencies:        servicePattern:          oneOf:            # --- CASE 1: Event-Driven Workflow ---            - properties:                servicePattern:                  enum:                    - event-driven-workflow                # --- These fields are ONLY shown if this pattern is selected ---                includeFlowable:                  type: boolean                  const: true # This is a hidden value, set automatically                  default: true                includeKafka:                  type: boolean                  const: true                  default: true                flowableProcessName:                  title: Flowable Process Name                  type: string                  description: 'Business process name (e.g., "customerOnboarding")'                flowableKafkaTopic:                  title: Inbound Kafka Topic                  type: string                  description: The Kafka topic that will trigger this workflow.                flowableEventKey:                  title: Flowable Event Key                  type: string                  description: 'The internal event key (e.g., "customerCreatedEvent")'              required:                - flowableProcessName                - flowableKafkaTopic                - flowableEventKey            # --- CASE 2: CQRS Read-Side Projector ---            - properties:                servicePattern:                  enum:                    - cqrs-read-projector                includeKafka:                  type: boolean                  const: true                  default: true                includeRedis:                  type: boolean                  const: true                  default: true                kafkaTopicName:                  title: Inbound Kafka Topic                  type: string                  description: The topic for write-side events to consume.                kafkaGroupId:                  title: Kafka Consumer Group ID                  type: string                  default: ${{ parameters.serviceName }}                redisHost:                  title: Redis Host                  type: string                  default: 'redis-service.local'              required:                - kafkaTopicName                - kafkaGroupId            # --- CASE 3: Kafka Consumer ---            - properties:                servicePattern:                  enum:                    - kafka-consumer                includeKafka:                  type: boolean                  const: true                  default: true                kafkaTopicName:                  title: Inbound Kafka Topic                  type: string                kafkaGroupId:                  title: Kafka Consumer Group ID                  type: string                  default: ${{ parameters.serviceName }}              required:                - kafkaTopicName                - kafkaGroupId                # --- CASE 4: Simple Web Service (no extra fields needed) ---            - properties:                servicePattern:                  enum:                    - simple-web-service
+This structure is powerful. It sets hidden boolean parameters (includeFlowable, includeKafka, includeRedis) based on the pattern selection. These booleans will be used later in the skeleton/ directory to conditionally scaffold code.
+
+E. Valuable Table 2: template.yaml Conditional Logic Syntax
+
+This table provides a quick reference for the YAML syntax used to build these dynamic forms.
+
+Keyword
+Syntax (YAML Example)
+react-jsonschema-form Behavior
+dependencies
+properties: { a:... }dependencies: { a:... }
+A top-level keyword. Links a dependent set of fields to a controlling field.22
+oneOf
+dependencies: { a: { oneOf: [... ] } }
+Used inside dependencies. Creates mutually exclusive sets of properties. The UI will show the fields in the list entry that matches the value of the controlling field.18
+allOf
+dependencies: { a: { allOf: [... ] } }
+Used inside dependencies. An array of schemas. Used for combining schemas, not for mutually exclusive choice.22
+if/then
+allOf: [ { if:..., then:... } ]
+An alternative, more explicit way to define conditional logic. Can be used for simple boolean checks.22
+
+F. The steps Section: Orchestrating the Build
+
+This section defines what Backstage does with the parameters collected.2
+	•	fetch:template: Fetches the skeleton/ directory. All parameters are passed as values to the Nunjucks templating engine.15
+	•	publish:github: Pushes the templated code to the user's selected repoUrl.25
+	•	catalog:register: Registers the catalog-info.yaml from the new repo into the Backstage Catalog.7
+
+YAML
+
+
+  steps:    - id: fetch-skeleton      name: Fetch Skeleton      action: fetch:template      input:        url:./skeleton        values:          # Pass all parameters to the skeleton          serviceName: ${{ parameters.serviceName }}          owner: ${{ parameters.owner }}          repoUrl: ${{ parameters.repoUrl }}          postgresDbName: ${{ parameters.postgresDbName }}          servicePattern: ${{ parameters.servicePattern }}                    # Pass conditional values          includeFlowable: ${{ parameters.includeFlowable }}          includeKafka: ${{ parameters.includeKafka }}          includeRedis: ${{ parameters.includeRedis }}                    # Pass pattern-specific values (if they exist)          flowableProcessName: ${{ parameters.flowableProcessName }}          flowableKafkaTopic: ${{ parameters.flowableKafkaTopic }}          flowableEventKey: ${{ parameters.flowableEventKey }}          kafkaTopicName: ${{ parameters.kafkaTopicName }}          kafkaGroupId: ${{ parameters.kafkaGroupId }}          redisHost: ${{ parameters.redisHost }}    - id: publish      name: Publish to Repository      action: publish:github      input:        allowedHosts: ['github.com', 'gitlab.com']        repoUrl: ${{ parameters.repoUrl }}        defaultBranch: main    - id: register      name: Register in Backstage      action: catalog:register      input:        repoContentsUrl: ${{ steps.publish.output.repoContentsUrl }}        catalogInfoPath: '/catalog-info.yaml'  output:    links:      - title: View Repository        url: ${{ steps.publish.output.remoteUrl }}      - title: View in Catalog        icon: catalog        entityRef: ${{ steps.register.output.entityRef }}
+
+III. Part 2: Building the skeleton/ — Dynamic Code Generation with Nunjucks
+
+The skeleton/ directory contains the superset of the Golden Path service. The fetch:template action processes every file and filename in this directory using the Nunjucks templating language.14 All parameters passed in the values block of the fetch-skeleton step are available in a values object (e.g., ${{ parameters.serviceName }} in YAML becomes {{ values.serviceName }} in Nunjucks).14
+
+A. The Nunjucks if Block: The Primary Tool
+
+Nunjucks control tags ({%... %}) are used for logic, such as if statements and for loops.14 The if block is the most critical tool for the hybrid strategy. It will be used to conditionally include code based on the hidden boolean parameters.
+
+Code snippet
+
+
+{# This is a Nunjucks comment #}{% if values.includeKafka %}<dependency>    <groupId>org.springframework.kafka</groupId>    <artifactId>spring-kafka</artifactId></dependency>{% endif %}
+
+B. Pattern 1: Conditionally Scaffolding pom.xml Dependencies
+
+The skeleton/pom.xml will contain all possible dependencies, each wrapped in its own Nunjucks if block.
+
+XML
+
+
+<project...>  <groupId>com.example</groupId>  <artifactId>{{ values.serviceName }}</artifactId>  <version>0.0.1-SNAPSHOT</version>  <properties>    <java.version>17</java.version>    <flowable.version>7.0.1</flowable.version>   </properties>  <dependencies>    <dependency>      <groupId>org.springframework.boot</groupId>      <artifactId>spring-boot-starter-web</artifactId>    </dependency>    <dependency>      <groupId>org.springframework.boot</groupId>      <artifactId>spring-boot-starter-data-jpa</artifactId>    </dependency>    <dependency>      <groupId>org.postgresql</groupId>      <artifactId>postgresql</artifactId>      <scope>runtime</scope>    </dependency>    <dependency>      <groupId>org.springframework.boot</groupId>      <artifactId>spring-boot-starter-test</artifactId>      <scope>test</scope>    </dependency>    {% if values.includeKafka %}    <dependency>      <groupId>org.springframework.kafka</groupId>      <artifactId>spring-kafka</artifactId>    </dependency>    <dependency>      <groupId>org.springframework.kafka</groupId>      <artifactId>spring-kafka-test</artifactId>      <scope>test</scope>    </dependency>    {% endif %}    {% if values.includeRedis %}    <dependency>      <groupId>org.springframework.boot</groupId>      <artifactId>spring-boot-starter-data-redis</artifactId>    </dependency>    {% endif %}    {% if values.includeFlowable %}    <dependency>      <groupId>org.flowable</groupId>      <artifactId>flowable-spring-boot-starter</artifactId>      <version>${flowable.version}</version>    </dependency>    {% endif %}  </dependencies></project>
+
+C. Pattern 2: Conditionally Scaffolding application.properties
+
+The same principle applies to skeleton/src/main/resources/application.properties.
+
+Properties
+
+
+# skeleton/src/main/resources/application.properties# === BASE CONFIG ===spring.application.name={{ values.serviceName }}server.port=8080# PostgreSQL Configspring.datasource.url=jdbc:postgresql://localhost:5432/{{ values.postgresDbName }}spring.datasource.username=postgresspring.datasource.password=postgresspring.jpa.hibernate.ddl-auto=update{% if values.includeKafka %}# === KAFKA CONFIG ===spring.kafka.bootstrap-servers=localhost:9092{% if values.kafkaGroupId %}spring.kafka.consumer.group-id={{ values.kafkaGroupId }}{% endif %}{% if values.kafkaTopicName %}# This is a custom property, not a Spring propertyapp.kafka.inbound-topic={{ values.kafkaTopicName }}{% endif %}{% endif %}{% if values.includeRedis %}# === REDIS CONFIG ===spring.redis.host={{ values.redisHost | default('localhost') }}spring.redis.port=6379{% endif %}{% if values.includeFlowable %}# === FLOWABLE CONFIG ===# Disable process definition checks on startupflowable.check-process-definitions=false# Enable the Event Registry for Kafka integrationflowable.eventregistry.enabled=true{% endif %}
+
+D. Pattern 3: Conditionally Scaffolding Files and Directories
+
+A common mistake is to put Nunjucks if blocks inside a Java file, which can lead to invalid syntax if the condition is false. The correct approach is to conditionally create the file itself.
+The fetch:template action supports Nunjucks in filenames.2 If a filename expression templates to a "falsy" value (e.g., an empty string), the file will be skipped entirely.29 This is a non-obvious but powerful technique for conditional file scaffolding.
+Implementation:
+	•	To skip a single file: Name the file with a Nunjucks expression. The content of this file should be valid Java (or XML, etc.) without any Nunjucks if blocks.
+	•	skeleton/src/main/java/com/example/consumer/{% if values.includeKafka %}KafkaConsumerService.java{% endif %}
+	•	skeleton/src/main/java/com/example/projector/{% if values.servicePattern == 'cqrs-read-projector' %}CustomerProjector.java{% endif %}
+	•	To skip an entire directory: Apply the same logic to all files within that directory.
+	•	skeleton/src/main/resources/eventregistry/{% if values.includeFlowable %}inbound.channel{% endif %}
+	•	skeleton/src/main/resources/eventregistry/{% if values.includeFlowable %}{{ values.flowableEventKey }}.event{% endif %}
+	•	skeleton/src/main/resources/processes/{% if values.includeFlowable %}{{ values.flowableProcessName }}.bpmn20.xml{% endif %}
+If the user selects the "Simple REST API" pattern, values.includeFlowable will be null (falsy), and none of these files will be created.
+
+IV. Part 3: Deep Dive — Scaffolding Your Specific SaaS Stack
+
+This section provides the concrete implementation details for the technologies in the stack, applying the patterns from Sections II and III.
+
+A. Critical Prerequisite: Enforcing Flowable 7.x Compatibility
+
+A "Golden Path" must prevent developers from making mistakes. A critical, non-obvious mistake exists in this stack.
+	•	The Problem: The research confirms a hard incompatibility between Flowable 6.x (e.g., 6.8.0) and Spring Boot 3.x.30 Spring Boot 3 requires Java 17 and the jakarta.* namespace, which Flowable 6.x does not support. Using Flowable 6.8 will result in No qualifying bean errors at startup.30
+	•	The Solution: Flowable 7.x was released specifically to support Spring Boot 3, Java 17, and the Jakarta EE namespace.32
+	•	Action (Non-Negotiable): The Golden Path template must enforce this. As shown in the pom.xml skeleton (Section III.B), the template defines a <flowable.version> property and sets it to 7.0.1 (or newer).32 This is a core "best practice" that the template provides.
+
+Valuable Table 3: Spring Boot 3.2 Golden Path Compatibility Matrix
+
+This table serves as the "source of truth" for the skeleton/pom.xml, ensuring no incompatible dependencies are scaffolded.
+
+Technology
+Required Dependency
+Recommended Version
+Compatibility Note
+Java
+java.version
+17
+Required by Spring Boot 3 and Flowable 7.30
+Spring Boot
+spring-boot-starter-parent
+3.2.x
+User-specified. Requires Java 17+.
+Flowable
+flowable-spring-boot-starter
+7.x.x (e.g., 7.0.1+)
+Critical: Flowable 6.x is incompatible with Spring Boot 3.x.30
+Kafka
+spring-kafka
+(Managed by Boot 3.2)
+Version managed by the Spring Boot parent POM.
+Redis
+spring-boot-starter-data-redis
+(Managed by Boot 3.2)
+Version managed by the Spring Boot parent POM.
+PostgreSQL
+postgresql
+(Latest)
+Standard JDBC driver.
+
+B. Scaffolding the Flowable + Kafka Event Registry
+
+This implements the event-driven-workflow pattern.
+	•	Goal: To scaffold a service that starts a BPMN process from a Kafka message.
+	•	Template Parameters: flowableProcessName, flowableKafkaTopic, flowableEventKey.
+	•	Conditional Skeleton Files (gated by {% if values.includeFlowable %}):
+	•	skeleton/src/main/resources/processes/{{ values.flowableProcessName }}.bpmn20.xml:
+	•	This file will contain a BPMN 2.0 process definition.
+	•	The "Start Event" must be an "Event Registry start event".35
+	•	The eventType property must be templated to link to the event definition: <startEvent id="startEvent" flowable:eventType="{{ values.flowableEventKey }}" />.35
+	•	skeleton/src/main/resources/eventregistry/inbound.channel:
+	•	This JSON file defines the Kafka channel configuration.37
+	•	The topics array and channelEventKeyDetection must be templated.
+JSON{  "key": "inbound.channel",  "channelType": "inbound",  "type": "kafka",  "deserializerType": "json",  "topics":,  "channelEventKeyDetection": {    "fixedValue": "{{ values.flowableEventKey }}"  }}
+	•	skeleton/src/main/resources/eventregistry/{{ values.flowableEventKey }}.event:
+	•	This JSON file defines the event payload mapping from the Kafka message to Flowable process variables.37
+	•	The key and inboundChannelKeys must be templated.
+JSON{  "key": "{{ values.flowableEventKey }}",  "name": "{{ values.flowableEventKey }} Event",  "inboundChannelKeys": ["inbound.channel"],  "payload": [    {      "name": "customerId",      "type": "string"    },    {      "name": "customerName",      "type": "string"    }  ]}
+
+V. Part 4: Scaffolding Advanced, Production-Ready Patterns
+
+This is what differentiates a simple template from a true "Golden Path".5 This stack is built for complex, reliable patterns. The template must make these patterns the easiest path for developers.
+
+A. The Transactional Outbox Pattern
+
+	•	The "Why": A service cannot atomically write to PostgreSQL and publish to Kafka without a two-phase commit, which is not recommended. This is the "dual writes" problem.39 A failure in either step leaves the system in an inconsistent state. The Outbox Pattern solves this by writing the event to an outbox table in the same database transaction as the business data.39
+	•	Template Action: A transactionalPattern enum parameter (similar to servicePattern) could be added to the template.yaml to allow developers to choose their preferred implementation.
+	•	Strategy 1: Scaffolding Spring Cloud Stream (The "Managed" Outbox)
+	•	Implementation: Spring Cloud Stream (SCS) with the Kafka binder can, in some configurations, synchronize the database transaction (JPA) with the Kafka producer transaction.40 The service method is annotated @Transactional, and it uses StreamBridge to send. Spring Cloud Stream ensures the Kafka message is only sent if the database transaction commits.40
+	•	Skeleton (if values.transactionalPattern == 'spring-cloud-stream'):
+	•	pom.xml: Conditionally add spring-cloud-stream and spring-cloud-stream-binder-kafka.42
+	•	MyService.java: Scaffold a @Transactional method that injects StreamBridge and calls repository.save(...) and streamBridge.send(...) within the same method body.40
+	•	Strategy 2: Scaffolding Debezium (The "True" Outbox)
+	•	Implementation: This is a more robust, decoupled pattern. The service knows nothing about Kafka. It just writes its business data and an OutboxEvent to its own database within a single @Transactional method.41 Debezium, a separate Change Data Capture (CDC) tool, tails the database transaction log, sees the new outbox record, and it is responsible for publishing the message to Kafka.41
+	•	Skeleton (if values.transactionalPattern == 'debezium-cdc'):
+	•	skeleton/src/main/java/com/example/outbox/{% if... %}OutboxEvent.java{% endif %}: Conditionally scaffold this JPA entity (with fields like aggregateId, eventType, payload).
+	•	MyService.java: Scaffold the @Transactional method to save the main entity and a new OutboxEvent record to an OutboxRepository.
+	•	skeleton/README.md: Critically, append a "Next Steps" section to the templated README.md. This instructs the developer on how to configure the Debezium Kafka Connect connector to monitor their new outbox table. The template provides the application side; the Golden Path documentation 4 provides the infrastructure side.
+
+B. The CQRS Pattern: Scaffolding a Read-Side Projector
+
+	•	The "Why": The specified stack is purpose-built for Command Query Responsibility Segregation (CQRS).9
+	•	Command (Write): Spring Boot Service -> PostgreSQL (The canonical data).
+	•	Bus: Kafka (Events like CUSTOMER_UPDATED).
+	•	Query (Read): A new service (a "projector") listens to Kafka 10, builds a denormalized "read" model, and stores it in Redis for high-speed, low-latency lookups.
+	•	Template Action: This is the servicePattern: cqrs-read-projector option from Section II.
+	•	Skeleton (if values.servicePattern == 'cqrs-read-projector'):
+	•	This template will conditionally include dependencies for spring-kafka and spring-boot-starter-data-redis.46
+	•	skeleton/src/main/java/com/example/projector/{% if... %}CustomerProjectorService.java{% endif %}:
+	•	Conditionally scaffold this file using the Nunjucks filename trick.
+	•	It will contain a @KafkaListener method 46 that consumes events from {{ values.kafkaTopicName }}.
+	•	It will inject a RedisTemplate<String, CustomerView>.49
+	•	The listener method will deserialize the event, create a CustomerView (a read-model POJO), and save it to Redis (e.g., redisTemplate.opsForValue().set(key, customerView)).
+
+VI. Final Recommendations and Implementation Roadmap
+
+
+A. The Final Step: Templating the catalog-info.yaml
+
+The last step in the template.yaml must be catalog:register.7 This step reads a catalog-info.yaml file from the newly created repository and ingests it into Backstage.
+Therefore, the skeleton/ directory must include a catalog-info.yaml file. This file should also be templated with Nunjucks to reflect the user's choices.7
+This catalog-info.yaml is not just for display; it is a metadata file that other Backstage plugins read. The Golden Path template should automatically configure these integrations. For example, the Backstage Kafka plugin looks for a specific annotation: kafka.apache.org/consumer-groups.50 If the template is scaffolding a Kafka consumer, it should automatically add this annotation. This is the essence of a Golden Path 5: the developer does not need to know how to add observability; the template does it for them.
+Skeleton Example (skeleton/catalog-info.yaml):
+
+YAML
+
+
+apiVersion: backstage.io/v1alpha1kind: Componentmetadata:  name: ${{ values.serviceName }}  description: ${{ values.description | default('My new service') }}    # === CONDITIONAL ANNOTATIONS ===  annotations:    # Link to the source repository    github.com/project-slug: ${{ values.repoUrl | parseRepoUrl | pick('owner') }}/${{ values.repoUrl | parseRepoUrl | pick('repo') }}        {% if values.includeKafka and values.kafkaGroupId %}    # This annotation powers the Backstage Kafka Plugin     kafka.apache.org/consumer-groups: ${{ values.kafkaGroupId }}    {% endif %}  # === CONDITIONAL TAGS ===  tags:    - java    - spring-boot    {% if values.includeFlowable %}    - flowable    {% endif %}    {% if values.includeKafka %}    - kafka    {% endif %}    {% if values.includeRedis %}    - redis    {% endif %}spec:  type: service  lifecycle: experimental  owner: ${{ values.owner }}  system: default-system # This should also be a parameter
+
+B. Implementation and Rollout Roadmap
+
+	•	Build the "Perfect" Skeleton: Do not start in Backstage. Create a new, local Git repository. Manually build the "superset" Spring Boot 3.2 / Flowable 7 / Kafka / Redis application. Ensure all code compiles and all features (e.g., the Flowable event registry) are working. This is the target.
+	•	"De-template" the Skeleton: Systematically go through this "perfect" repository and apply the Nunjucks templating.
+	•	Wrap all optional dependencies in pom.xml with {% if %} blocks.
+	•	Wrap all optional configurations in application.properties with {% if %} blocks.
+	•	Identify all files/directories that are optional and rename them using the Nunjucks conditional-filename pattern (e.g., {% if values.includeFlowable %}...{% endif %} 29).
+	•	Replace all hardcoded values (like serviceName) with {{ values.variable }}.
+	•	Build the template.yaml: Author the template.yaml file as described in Section II. Ensure the parameters match the values used in the skeleton.
+	•	Local Testing: Use the Backstage Template Editor (found at /create/edit) 51 or register the template from its local file path 52 to test the scaffolding process end-to-end.
+	•	Pilot Rollout: Release the template to a single, friendly "pilot" team. Gather feedback on the developer experience.
+	•	Iterate and Evangelize: Use the feedback to refine the template's "Golden Path." Announce and document its availability as the new, official, and easiest way to create compliant services within the ecosystem.
+Works cited
+	•	What is Backstage? | Backstage Software Catalog and Developer ..., accessed on November 17, 2025, https://backstage.io/docs/overview/what-is-backstage
+	•	Backstage Software Templates | Backstage Software Catalog and Developer Platform, accessed on November 17, 2025, https://backstage.io/docs/features/software-templates/
+	•	Backstage Software Catalog and Developer Platform, accessed on November 17, 2025, https://backstage.io/
+	•	How We Use Golden Paths to Solve Fragmentation in Our Software Ecosystem, accessed on November 17, 2025, https://engineering.atspotify.com/2020/08/how-we-use-golden-paths-to-solve-fragmentation-in-our-software-ecosystem
+	•	What is a Golden Path for software development? - Red Hat, accessed on November 17, 2025, https://www.redhat.com/en/topics/platform-engineering/golden-paths
+	•	Golden Paths for Developers: Maximise DevOps Potential | Devoteam, accessed on November 17, 2025, https://www.devoteam.com/expert-view/building-golden-paths-with-internal-developer-platforms/
+	•	Getting Started with Backstage - Piotr's TechBlog, accessed on November 17, 2025, https://piotrminkowski.com/2024/06/13/getting-started-with-backstage/
+	•	How to create a microservice (or any component) in Backstage (Demo) - YouTube, accessed on November 17, 2025, https://www.youtube.com/watch?v=U1iwe3L5pzc
+	•	CQRS Pattern - Azure Architecture Center | Microsoft Learn, accessed on November 17, 2025, https://learn.microsoft.com/en-us/azure/architecture/patterns/cqrs
+	•	Building high scalable microservices with CQRS and Event Sourcing Using Spring, Kafka and Cassandra | by Jorge Gonzalez | Medium, accessed on November 17, 2025, https://medium.com/@jorgegfx/building-high-scalable-microservices-with-cqrs-and-event-sourcing-using-spring-kafka-and-cassandra-e3dbe1be8dff
+	•	Modular Backstage Plugins: Solving the Monolithic ... - LIVEcommunity, accessed on November 17, 2025, https://live.paloaltonetworks.com/t5/engineering-blogs/modular-backstage-plugins-solving-the-monolithic-plugin-problem/ba-p/606207
+	•	Streamlining Backstage Development: A Modular Approach to Plugin Architecture | by Sonu, accessed on November 17, 2025, https://medium.com/@sonu.sonu75/modular-backstage-plugins-solving-the-monolithic-plugin-problem-b1e52211cbc3
+	•	Composable vs. Monolithic - Sengo, accessed on November 17, 2025, https://sengo.com/resources/news/article/composable-vs-monolithic/
+	•	10 tips for better Backstage Software Templates - Red Hat Developer, accessed on November 17, 2025, https://developers.redhat.com/articles/2025/03/17/10-tips-better-backstage-software-templates
+	•	Writing Templates | Backstage Software Catalog and Developer Platform, accessed on November 17, 2025, https://backstage.io/docs/features/software-templates/writing-templates/
+	•	Adding your own Templates | Backstage Software Catalog and Developer Platform, accessed on November 17, 2025, https://backstage.io/docs/features/software-templates/adding-templates/
+	•	Template Basics - KodeKloud Notes, accessed on November 17, 2025, https://notes.kodekloud.com/docs/Certified-Backstage-Associate-CBA/Templates/Template-Basics
+	•	Conditional loading of fields in template UI for Radio button · Issue #8330 - GitHub, accessed on November 17, 2025, https://github.com/backstage/backstage/issues/8330
+	•	Backstage Scaffolder Parameters - Roadie.io, accessed on November 17, 2025, https://roadie.io/docs/scaffolder/scaffolder-parameters/
+	•	Descriptor Format of Catalog Entities | Backstage Software Catalog and Developer Platform, accessed on November 17, 2025, https://backstage.io/docs/features/software-catalog/descriptor-format/
+	•	Chapter 7. Managing templates | Administration guide for Red Hat Developer Hub, accessed on November 17, 2025, https://docs.redhat.com/en/documentation/red_hat_developer_hub/1.1/html/administration_guide_for_red_hat_developer_hub/assembly-admin-templates
+	•	Input Examples | Backstage Software Catalog and Developer Platform, accessed on November 17, 2025, https://backstage.io/docs/features/software-templates/input-examples/
+	•	oneOf, anyOf, allOf, not | Swagger Docs, accessed on November 17, 2025, https://swagger.io/docs/specification/v3_0/data-models/oneof-anyof-allof-not/
+	•	Bug Report: Scaffolding template - using oneOf does not pass validation to the next step · Issue #18535 · backstage/backstage - GitHub, accessed on November 17, 2025, https://github.com/backstage/backstage/issues/18535
+	•	Conditionally add fields to steps in backstage scaffolder template - Stack Overflow, accessed on November 17, 2025, https://stackoverflow.com/questions/76836561/conditionally-add-fields-to-steps-in-backstage-scaffolder-template
+	•	Debug your nunjucks template - Roadie.io, accessed on November 17, 2025, https://roadie.io/docs/scaffolder/recipes/debug-template/
+	•	Builtin actions | Backstage Software Catalog and Developer Platform, accessed on November 17, 2025, https://backstage.io/docs/features/software-templates/builtin-actions/
+	•	Nunjucks templating docs, accessed on November 17, 2025, https://mozilla.github.io/nunjucks/templating.html
+	•	Have the scaffolder take input values to select certain files or directories that will not be templated/created in the resulting repository · Issue #10514 - GitHub, accessed on November 17, 2025, https://github.com/backstage/backstage/issues/10514
+	•	Flowable 6.8.0 is Not working properly with Spring Boot 3.x, accessed on November 17, 2025, https://forum.flowable.org/t/flowable-6-8-0-is-not-working-properly-with-spring-boot-3-x/10578
+	•	Flowable 7 with Spring Boot 3: No qualifying bean of type 'org.flowable.engine.RepositoryService' - Stack Overflow, accessed on November 17, 2025, https://stackoverflow.com/questions/76439193/flowable-7-with-spring-boot-3-no-qualifying-bean-of-type-org-flowable-engine-r
+	•	Flowable Open Source 7.0.0 Release, accessed on November 17, 2025, https://www.flowable.com/blog/releases/flowable-open-source-7-0-0-release
+	•	Spring Boot · Flowable Open Source Documentation, accessed on November 17, 2025, https://www.flowable.com/open-source/docs/bpmn/ch05a-Spring-Boot
+	•	Flowable upgrade to 7.0.1 version issues, accessed on November 17, 2025, https://forum.flowable.org/t/flowable-upgrade-to-7-0-1-version-issues/11705
+	•	Integrating Kafka with Flowable | The journey of a techie - WordPress.com, accessed on November 17, 2025, https://sukalpo.wordpress.com/2020/05/01/integrating-kafka-with-flowable/
+	•	Problems starting process from Kafka Event - Flowable forum, accessed on November 17, 2025, https://forum.flowable.org/t/problems-starting-process-from-kafka-event/6916
+	•	Flowable Event Registry POC with Kafka - GitHub, accessed on November 17, 2025, https://github.com/onepointconsulting/flowable-event-registry-poc
+	•	How to import/register Channels and Events - Flowable forum - Open Source, accessed on November 17, 2025, https://forum.flowable.org/t/how-to-import-register-channels-and-events/6110
+	•	Implementing the Transactional Outbox Pattern with Spring Boot, Spring Data JPA, Kafka, and Spring Batch for Fact and Delta Event Publishing | by Abdulmalik | Medium, accessed on November 17, 2025, https://medium.com/@abumuhab/implementing-the-transactional-outbox-pattern-with-spring-boot-spring-data-jpa-kafka-and-spring-44f4b380487a
+	•	A Use Case for Transactions: Outbox Pattern Strategies in Spring Cloud Stream Kafka Binder, accessed on November 17, 2025, https://spring.io/blog/2023/10/24/a-use-case-for-transactions-adapting-to-transactional-outbox-pattern/
+	•	Spring Boot Transactional Outbox Pattern with Debezium and Kafka - GitHub, accessed on November 17, 2025, https://github.com/YunusEmreNalbant/transactional-outbox-pattern-with-debezium
+	•	Spring Cloud Stream & Kafka Streams Binder + Processor API - GitHub, accessed on November 17, 2025, https://github.com/rogervinas/spring-cloud-stream-kafka-streams-processor
+	•	Spring Cloud Stream binders for Apache Kafka and Kafka Streams - GitHub, accessed on November 17, 2025, https://github.com/spring-attic/spring-cloud-stream-binder-kafka
+	•	spring-cloud-stream-kafka · GitHub Topics, accessed on November 17, 2025, https://github.com/topics/spring-cloud-stream-kafka
+	•	Outbox Pattern with Spring Boot and Debezium - DEV Community, accessed on November 17, 2025, https://dev.to/raedobh/outbox-pattern-with-spring-boot-and-debezium-1od7
+	•	Experimental spring boot 2 - Apache kafka - REDIS and Docker implementation - GitHub, accessed on November 17, 2025, https://github.com/priitserk/spring-boot-kafka-redis-docker
+	•	Java Spring Boot REST Server with Redis and Kafka | CodeNOW Documentation, accessed on November 17, 2025, https://docs.codenow.com/java-spring-boot-complex-examples/java-spring-boot-rest-server-with-redis-and-kafka
+	•	Spring boot Redis and Kafka Serialization Error - Stack Overflow, accessed on November 17, 2025, https://stackoverflow.com/questions/78304087/spring-boot-redis-and-kafka-serialization-error
+	•	A simple example explaining how to use Redis Messaging with Spring Boot - GitHub, accessed on November 17, 2025, https://github.com/SimpleProgramming/springboot-redis-messaging
+	•	Backstage Kafka Plugin - Roadie.io, accessed on November 17, 2025, https://roadie.io/backstage/plugins/kafka/
+	•	Chapter 4. About Software Templates | Customizing Red Hat Developer Hub, accessed on November 17, 2025, https://docs.redhat.com/en/documentation/red_hat_developer_hub/1.7/html/customizing_red_hat_developer_hub/configuring-templates
+	•	Anatomy of a Software Template - Spotify for Backstage, accessed on November 17, 2025, https://backstage.spotify.com/learn/onboarding-software-to-backstage/setting-up-software-templates/8-anatomy-software-template/

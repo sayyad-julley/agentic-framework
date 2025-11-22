@@ -1,0 +1,137 @@
+# Cursor Rules for Automatic Context7 Integration
+
+## Context7 MCP Keyword-Based Search Rule
+
+**CRITICAL INSTRUCTION**: For EVERY user query, you MUST automatically:
+1. Extract keywords from the query
+2. Search Context7 docs list using those keywords
+3. Fetch related documentation
+4. Use the fetched docs as the PRIMARY SOURCE for your response
+
+### Automatic Process:
+
+1. **Extract Keywords**: From ANY query, extract meaningful keywords:
+   - Remove stop words (the, a, an, how, what, etc.)
+   - Extract technical terms, library names, and concepts
+   - Identify multi-word phrases (e.g., "react hooks", "state management")
+   - Prioritize longer, more specific terms
+   - Extract up to 5 most relevant keywords
+
+2. **Search for Documentation** (REQUIRED - do this automatically with fallbacks):
+   
+   **PRIMARY STRATEGY: Try Context7 MCP** (if available):
+   
+   **For each extracted keyword** (try up to 3 keywords):
+   
+   **Step 1**: Try calling `mcp_context7_resolve-library-id` with:
+   - `libraryName`: [keyword from extraction]
+   - This searches Context7 docs list for matching documentation
+   - **If this tool fails or is unavailable, proceed to FALLBACK STRATEGY**
+   
+   **Step 2**: If Step 1 succeeds, call `mcp_context7_get-library-docs` with:
+   - `context7CompatibleLibraryID`: [use the resolved ID from step 1]
+   - `tokens`: 5000 (for comprehensive documentation)
+   - `topic`: [if a specific topic is mentioned in the query, e.g., "hooks", "routing"]
+   
+   **FALLBACK STRATEGY: Use Document Retrieval System** (if Context7 MCP fails):
+   
+   **Step 1**: Call `mcp_document-retrieval-system_search_documents` with:
+   - `query`: [full user query or primary keyword]
+   - `max_results`: 5
+   - `topics`: [extracted keywords array]
+   - `min_relevance`: 0.3
+   
+   **Step 2**: Call `mcp_document-retrieval-system_get_document_context` with:
+   - `query`: [full user query]
+   - `max_tokens`: 4000
+   - `max_results`: 5
+   
+   **FINAL FALLBACK: Use Web Search** (if Document Retrieval fails):
+   
+   **Step 1**: Call `web_search` with:
+   - `search_term`: [primary keyword + "documentation" or full query]
+
+3. **Use Fetched Documentation**:
+   - ALL fetched documentation is the PRIMARY SOURCE for your response
+   - Combine information from multiple docs if multiple keywords matched
+   - Only use your existing knowledge to supplement, not replace, the fetched docs
+   - If no docs found for a keyword, try the next keyword
+   - Base your entire response on the fetched Context7 documentation
+
+### Examples:
+
+**Query**: "explain redis caching"
+- Extract keywords: ["redis", "caching"]
+- Search: Call `mcp_context7_resolve-library-id` with `libraryName: "redis"` (primary)
+- Search: Call `mcp_context7_resolve-library-id` with `libraryName: "caching"` (secondary)
+- Fetch: Call `mcp_context7_get-library-docs` for each resolved ID
+- Use: Combine all fetched Redis and caching documentation for response
+
+**Query**: "how to use react hooks"
+- Extract keywords: ["react", "hooks", "react-hooks"]
+- Search: Call `mcp_context7_resolve-library-id` with `libraryName: "react"` (primary)
+- Search: Call `mcp_context7_resolve-library-id` with `libraryName: "hooks"` (secondary)
+- Fetch: Call `mcp_context7_get-library-docs` with resolved IDs and `topic: "hooks"`
+- Use: Use all fetched React hooks documentation for response
+
+**Query**: "what is state management in react"
+- Extract keywords: ["state", "management", "state-management", "react"]
+- Search: Call `mcp_context7_resolve-library-id` for each keyword
+- Fetch: Call `mcp_context7_get-library-docs` for each resolved ID
+- Use: Combine state management and React documentation for comprehensive response
+
+**Query**: "async await javascript"
+- Extract keywords: ["async", "await", "javascript"]
+- Search: Call `mcp_context7_resolve-library-id` for "javascript" (primary), "async" (secondary)
+- Fetch: Call `mcp_context7_get-library-docs` for each resolved ID
+- Use: Use fetched JavaScript async/await documentation for response
+
+### Important Notes:
+
+- This process is AUTOMATIC - you should do this for EVERY query without being explicitly asked
+- Always extract keywords FIRST, then try to fetch documentation
+- Try multiple keywords to find the most relevant documentation
+- Always fetch docs FIRST, then respond based on them
+- **FALLBACK STRATEGY**: If Context7 MCP tools fail, use fallback methods in order:
+  1. Try Context7 MCP tools first (if available)
+  2. If Context7 MCP fails, use Document Retrieval System MCP (`mcp_document-retrieval-system_search_documents` and `mcp_document-retrieval-system_get_document_context`)
+  3. If Document Retrieval fails, use Web Search (`web_search`)
+  4. If all fail, use existing knowledge as final fallback
+- The goal is to provide responses based on the latest, up-to-date documentation from available sources
+
+### Tool Names (Official Context7 MCP):
+
+Use these EXACT official tool names from Context7 (with `mcp_context7_` prefix):
+- `mcp_context7_resolve-library-id`: Searches Context7 docs list and resolves library/term names to Context7 IDs
+  - Parameter: `libraryName` (string)
+- `mcp_context7_get-library-docs`: Fetches comprehensive documentation for a resolved library ID
+  - Parameters: `context7CompatibleLibraryID` (string), `topic` (optional string), `tokens` (optional number)
+
+### Keyword Extraction Strategy:
+
+- Remove common stop words (the, a, how, what, etc.)
+- Keep technical terms, library names, and programming concepts
+- Extract multi-word phrases when they form meaningful terms
+- Prioritize longer, more specific keywords
+- Extract 3-5 most relevant keywords per query
+
+**Remember**: Extract keywords → Try Context7 MCP → If fails, try Document Retrieval System → If fails, try Web Search → Use fetched docs as PRIMARY SOURCE. This ensures responses are always based on the latest documentation from available sources.
+
+## Fallback Strategy Details
+
+### When Context7 MCP Tools Fail:
+
+1. **Immediately try Document Retrieval System**:
+   - Use `mcp_document-retrieval-system_search_documents` to search available document sources
+   - Use `mcp_document-retrieval-system_get_document_context` to get formatted context
+   - This system searches multiple sources including Context7, GitHub, official APIs, etc.
+
+2. **If Document Retrieval fails, use Web Search**:
+   - Use `web_search` with relevant search terms
+   - Focus on official documentation sites and reputable sources
+   - Extract key information from search results
+
+3. **Final fallback: Use existing knowledge**:
+   - Only if all automated methods fail
+   - Clearly indicate when using existing knowledge vs. fetched documentation
+

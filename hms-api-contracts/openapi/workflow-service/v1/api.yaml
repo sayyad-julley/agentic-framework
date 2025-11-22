@@ -1,0 +1,61 @@
+openapi: 3.0.3
+info:
+  title: HMS Workflow Service
+  version: 1.0.0
+  description: Orchestrates onboarding and provisioning sagas.
+servers:
+  - url: /api/v1
+paths:
+  /onboarding/start:
+    post:
+      summary: Start a new onboarding process
+      operationId: startOnboarding
+      tags: [Onboarding]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartOnboardingRequest'
+      responses:
+        '202':
+          description: Process started successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OnboardingResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+components:
+  schemas:
+    StartOnboardingRequest:
+      type: object
+      required: [tenantName, adminEmail]
+      properties:
+        tenantName:
+          type: string
+          example: "Acme Corp"
+        adminEmail:
+          type: string
+          format: email
+          example: "admin@acme.com"
+    OnboardingResponse:
+      type: object
+      properties:
+        processId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [PENDING, STARTED]
+    ErrorResponse:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string

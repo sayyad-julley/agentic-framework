@@ -1,0 +1,16 @@
+{
+  "key": "{{ values.flowableEventKey | default('workflow-trigger') }}",
+  "name": "Workflow Trigger Event",
+  "inboundChannelKeys": ["inbound-kafka-channel"],
+  "payload": [
+    {
+      "name": "customerId",
+      "type": "string"
+    },
+    {
+      "name": "orderId",
+      "type": "string"
+    }
+  ]
+}
+

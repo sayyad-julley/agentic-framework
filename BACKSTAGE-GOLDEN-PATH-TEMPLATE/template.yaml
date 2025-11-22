@@ -1,0 +1,204 @@
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: spring-boot-saas-service
+  title: HMS Spring Boot SaaS Service
+  description: A Golden Path template for creating secure, multi-tenant HMS services with ScaleKit, Flowable, and Debezium patterns.
+
+spec:
+  owner: platform-team
+  type: service
+
+  # -----------------------------------------------------------------
+  # PARAMETERS: Defines the multi-step UI form
+  # -----------------------------------------------------------------
+  parameters:
+    # --- Step 1: Base Service Details ---
+    - title: Base Service Details
+      required:
+        - serviceName
+        - description
+        - owner
+        - system
+        - postgresDbName
+      properties:
+        serviceName:
+          title: Service Name
+          type: string
+          description: Unique name of the component (e.g., hms-customer-bff)
+          ui:autofocus: true
+          pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$'
+          ui:help: Must be kebab-case (e.g., my-new-service)
+        description:
+          title: Description
+          type: string
+          description: A short description of the service's purpose.
+        owner:
+          title: Owner
+          type: string
+          description: The owning team/group for this component
+          ui:field: OwnerPicker
+          ui:options:
+            catalogFilter: { kind: 'Group' }
+        system:
+          title: System
+          type: string
+          description: The parent HMS System this service belongs to
+          ui:field: EntityPicker
+          ui:options:
+            catalogFilter: { kind: 'System' }
+        postgresDbName:
+          title: PostgreSQL Database Name
+          type: string
+          description: The name of the logical database to use.
+
+    # --- Step 2: Select Service Pattern (The Core Logic) ---
+    - title: Select Service Pattern
+      required:
+        - servicePattern
+      properties:
+        servicePattern:
+          title: What is the primary pattern for this service?
+          type: string
+          default: saas-backend-for-frontend
+          enum:
+            - saas-backend-for-frontend
+            - event-driven-workflow
+            - transactional-outbox-producer
+            - cqrs-read-projector
+          enumNames:
+            - 'B2B Backend-for-Frontend (BFF)'
+            - 'Event-Driven Workflow (Flowable + Kafka)'
+            - 'Transactional Outbox Producer (Debezium)'
+            - 'CQRS Read-Side Projector (Kafka + Redis)'
+
+    # --- Step 3: Pattern-Specific Configuration ---
+    # This step uses 'dependencies' to show/hide fields based on the
+    # 'servicePattern' selection. It also sets our hidden helper booleans.
+    - title: Pattern Configuration
+      properties:
+        # These are hidden boolean flags used by the Nunjucks skeleton.
+        # They are set automatically by the 'oneOf' block below.
+        includeBff: { type: 'boolean' }
+        includeFlowable: { type: 'boolean' }
+        includeOutbox: { type: 'boolean' }
+        includeKafkaConsumer: { type: 'boolean' }
+        includeRedis: { type: 'boolean' }
+
+        # These are the conditional UI fields
+        flowableProcessName: { title: 'Flowable Process ID', type: 'string' }
+        flowableKafkaTopic: { title: 'Flowable Trigger Topic', type: 'string' }
+        flowableEventKey: { title: 'Flowable Event Key', type: 'string' }
+        kafkaTopicName: { title: 'Kafka Consumer Topic', type: 'string' }
+        kafkaGroupId: { title: 'Kafka Consumer Group ID', type: 'string' }
+      
+      # This is the "magic" that connects the UI to the helper booleans.
+      dependencies:
+        servicePattern:
+          oneOf:
+            # Case 1: BFF
+            - properties:
+                servicePattern: { enum: ['saas-backend-for-frontend'] }
+                includeBff: { const: true }
+              # No extra fields needed
+                
+            # Case 2: Flowable Workflow
+            - properties:
+                servicePattern: { enum: ['event-driven-workflow'] }
+                includeFlowable: { const: true }
+                # Show these fields:
+                flowableProcessName: {}
+                flowableKafkaTopic: {}
+                flowableEventKey: {}
+              required: [flowableProcessName, flowableKafkaTopic, flowableEventKey]
+
+            # Case 3: Outbox Producer
+            - properties:
+                servicePattern: { enum: ['transactional-outbox-producer'] }
+                includeOutbox: { const: true }
+              # No extra fields needed
+                
+            # Case 4: CQRS Projector
+            - properties:
+                servicePattern: { enum: ['cqrs-read-projector'] }
+                includeKafkaConsumer: { const: true }
+                includeRedis: { const: true }
+                # Show these fields:
+                kafkaTopicName: {}
+                kafkaGroupId: {}
+              required: [kafkaTopicName, kafkaGroupId]
+
+    # --- Step 4: Repository Location ---
+    - title: Choose Repository Location
+      required:
+        - repoUrl
+      properties:
+        repoUrl:
+          title: Repository Location
+          type: string
+          ui:field: RepoUrlPicker
+          ui:options:
+            allowedHosts: [github.com, gitlab.com] # Customize this
+
+  # -----------------------------------------------------------------
+  # STEPS: Defines the backend actions to run
+  # -----------------------------------------------------------------
+  steps:
+    # Step 1: Fetch and template the skeleton
+    - id: fetch-skeleton
+      name: Fetch Skeleton
+      action: fetch:template
+      input:
+        url: ./skeleton
+        values:
+          # Pass all parameters to Nunjucks
+          serviceName: ${{ parameters.serviceName }}
+          description: ${{ parameters.description }}
+          owner: ${{ parameters.owner }}
+          system: ${{ parameters.system }}
+          repoUrl: ${{ parameters.repoUrl }}
+          postgresDbName: ${{ parameters.postgresDbName }}
+          servicePattern: ${{ parameters.servicePattern }}
+          
+          # Pass pattern-specific inputs
+          flowableProcessName: ${{ parameters.flowableProcessName }}
+          flowableKafkaTopic: ${{ parameters.flowableKafkaTopic }}
+          flowableEventKey: ${{ parameters.flowableEventKey }}
+          kafkaTopicName: ${{ parameters.kafkaTopicName }}
+          kafkaGroupId: ${{ parameters.kafkaGroupId }}
+          
+          # Pass our derived helper booleans
+          includeBff: ${{ parameters.includeBff }}
+          includeFlowable: ${{ parameters.includeFlowable }}
+          includeOutbox: ${{ parameters.includeOutbox }}
+          includeKafkaConsumer: ${{ parameters.includeKafkaConsumer }}
+          includeRedis: ${{ parameters.includeRedis }}
+
+    # Step 2: Publish to the new Git repository
+    - id: publish
+      name: Publish to Repository
+      action: publish:github # or gitlab, bitbucket
+      input:
+        repoUrl: ${{ parameters.repoUrl }}
+        defaultBranch: main
+        repoVisibility: private # Or 'public'
+
+    # Step 3: Register the new service in the Backstage Catalog
+    - id: register
+      name: Register in Backstage
+      action: catalog:register
+      input:
+        repoContentsUrl: ${{ steps.publish.output.repoContentsUrl }}
+        catalogInfoPath: '/catalog-info.yaml'
+
+  # -----------------------------------------------------------------
+  # OUTPUT: Defines the links shown to the user on success
+  # -----------------------------------------------------------------
+  output:
+    links:
+      - title: View Repository
+        url: ${{ steps.publish.output.remoteUrl }}
+      - title: View in Catalog
+        icon: catalog
+        entityRef: ${{ steps.register.output.entityRef }}
+

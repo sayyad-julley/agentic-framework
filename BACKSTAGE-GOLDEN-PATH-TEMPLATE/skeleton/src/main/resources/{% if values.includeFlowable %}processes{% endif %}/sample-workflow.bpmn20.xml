@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:flowable="http://flowable.org/bpmn"
+             targetNamespace="http://www.hms.com/workflow">
+    <process id="{{ values.flowableProcessName | default('sampleWorkflow') }}" 
+             name="Sample Workflow Process">
+        
+        <startEvent id="kafkaStartEvent" 
+                    flowable:eventType="{{ values.flowableEventKey | default('workflow-trigger') }}" 
+                    flowable:eventKeyDetection="fixedValue" />
+        
+        <sequenceFlow id="flow1" sourceRef="kafkaStartEvent" targetRef="logTask" />
+        <serviceTask id="logTask" name="Log the Event" 
+                     flowable:class="com.hms.servicename.workflow.LogEventDelegate" />
+        
+        <sequenceFlow id="flow2" sourceRef="logTask" targetRef="endEvent" />
+        
+        <endEvent id="endEvent" />
+    </process>
+</definitions>
+

@@ -1,0 +1,14 @@
+# EditorConfig for Backstage Golden Path Template
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# Skeleton files are templates - don't format them as Java
+[skeleton/**/*.java]
+# These are Nunjucks templates, not actual Java files
+
+

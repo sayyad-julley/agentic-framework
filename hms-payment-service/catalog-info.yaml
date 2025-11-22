@@ -1,0 +1,52 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: hms-payment-service
+  description: My new service for HMS
+  
+  # === ANNOTATIONS: The SDLC Integration ===
+  annotations:
+    # 1. Links to the Git repo (powers CI/CD, Code Coverage, etc.)
+    github.com/project-slug: ruchithaab-byte/hms-payment-service
+    
+    # 2. Test & Secure (SonarQube, Snyk)
+    sonarqube.org/project-key: hms-payment-service
+    # snyk.io/project-ids: '...' # Often provisioned and added later
+    
+    # 3. Deploy (ArgoCD, Kubernetes)
+    argocd/app-name: hms-payment-service
+    backstage.io/kubernetes-id: hms-payment-service
+    
+    # 4. Operate (PagerDuty, Grafana)
+    pagerduty.com/service-id: hms-payment-service # Or an integration key
+    grafana/dashboard-selector: 'app="hms-payment-service"'
+    
+    # 5. Conditional Annotations
+    
+
+spec:
+  type: service
+  lifecycle: experimental
+  owner: group:default/guests
+  system: system:default/examples
+  
+  # === RELATIONSHIPS: The Dependency Graph ===
+  dependsOn:
+    # All services depend on ScaleKit and Postgres
+    - api:default/scalekit
+    - resource:default/postgres-payment_db
+
+    
+    
+    
+    
+    
+    # This service produces events to topics (via Debezium)
+    # This is a declared dependency, even if indirect.
+    # We would need a parameter to list the topics it produces to.
+    # - resource:default/kafka-customer-events 
+    
+    
+  consumesApi:
+    - api:default/scalekit
+

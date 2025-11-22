@@ -1,0 +1,433 @@
+
+Architectural Patterns and Best Practices for a Spring, Flowable, Kafka, Redis, and PostgreSQL Stack
+
+
+1. The Core Architectural Blueprint: A Hybrid Orchestration-Choreography Model
+
+The selection of Flowable (a premier orchestration engine) alongside Apache Kafka (a premier choreography backbone) presents a foundational architectural choice. A common mistake is to view these as redundant or mutually exclusive. In fact, the expert-recommended pattern for this stack is a hybrid model that leverages the distinct strengths of both, resulting in a system that is both loosely-coupled and maintainable.
+
+1.1 The Central Conflict: Orchestration vs. Choreography
+
+Understanding the two paradigms is key to designing the system correctly:
+	•	Orchestration (Flowable): This pattern involves a central service (the orchestrator) that controls the flow of a business process. It sends commands to participant services, telling them what to do and when.1 Flowable, as an engine executing BPMN (Business Process Model and Notation) and CMMN (Case Management Model and Notation), is a canonical example of an orchestrator.3 The primary advantages are a "clearer flow" and simpler maintenance, as the entire business process is defined and visualized in one place.5
+	•	Choreography (Kafka): This pattern is decentralized. Services are autonomous, publishing domain events to a message broker like Kafka and reacting to events from other services.6 This promotes "loosely-coupled microservices," which is a significant architectural benefit.5 However, this pattern has well-known drawbacks: the end-to-end business process becomes "unclear" 8, and debugging a complex chain of events across multiple services is "challenging".8
+
+1.2 The Expert Recommendation: The Hybrid Pattern
+
+The realization that choreography and orchestration are not mutually exclusive is the basis for this blueprint.9 Real-world systems benefit from a hybrid approach that applies each pattern where it is strongest.9
+The recommended prescriptive blueprint is as follows:
+	•	Use Kafka-based Choreography for Domain Events: This pattern should be used for inter-context communication. When one bounded context (e.g., a CustomerService) completes an action, it publishes a "fact" (e.g., CustomerUpdatedEvent) to a Kafka topic. This is a fire-and-forget notification. The CustomerService is fully decoupled; it does not know or care which other services are listening.
+	•	Use Flowable-based Orchestration for Business Sagas: This pattern should be used for intra-context stateful process logic. When a complex, multi-step, long-running business process (e.g., OrderFulfillmentSaga) must be executed, it is modeled as a BPMN process in Flowable. This process orchestrates the steps (e.g., Charge Payment, Update Inventory, Initiate Shipping, WaitForShippingConfirmation).
+In this hybrid model, the Flowable engine acts as a sophisticated, stateful Kafka producer and consumer, managed via its native Event Registry.10 It subscribes to events that trigger a saga and publishes events or commands as part of a saga.
+
+1.3 Avoiding the "Invisible Process" Anti-Pattern
+
+The most significant anti-pattern in a pure choreography-based system is what critics call the "invisible process." The business logic, which is a tangible concept that users and stakeholders care about, "simply doesn't exist" in any one place.11 It is smeared across a dozen services in the form of event handlers, making monitoring, debugging, and modification nearly impossible.
+By modeling the stateful saga in Flowable, the process becomes visible, auditable, and manageable. The engine provides a "visual representation of runtime state" 12, which is a capability that is completely absent in a purely choreographed system.
+
+1.4 Architectural Decision Matrix
+
+The following table justifies the selection of the hybrid model by comparing it against the two "pure" alternatives.
+
+Architectural Pattern
+Maintainability
+Debuggability
+State Management
+Service Coupling
+Business Visibility
+Pure Choreography (Kafka only)
+Low. Logic is "buried" in many services.13
+Very Low. "Challenging to debug".8
+Complex. Each service must manage its own state.
+Low (Ideal).
+Very Low. The process is "invisible".11
+Pure Orchestration (Flowable only)
+High.
+High. Visual runtime state.12
+Centralized (in Flowable).
+High. Can become a "distributed monolith".14
+High.
+Hybrid Model (Recommended)
+High. Orchestration provides "clearer flow".5
+High. Sagas are visible in Flowable.
+Both. Centralized for sagas, decentralized for domain state.
+Low. Services are decoupled via Kafka events.6
+High.
+
+2. Guaranteeing Data Integrity: The Transactional Outbox Pattern
+
+In any event-driven system, the most critical technical challenge is the "dual-write" problem: how to atomically update a database (PostgreSQL) and publish a corresponding event to a message broker (Kafka).
+
+2.1 The Dual-Write Problem
+
+A service command, such as completeOrder, often needs to perform two actions: update an aggregate in the database (e.g., set orders.status = 'COMPLETED') and publish an OrderCompletedEvent to Kafka.15
+This cannot be reliably solved with a simple "try-catch" block. If the application commits the database transaction and then crashes before successfully publishing to Kafka, the system's state is now inconsistent. The event is lost forever.
+Using traditional two-phase commit (2PC) across PostgreSQL and Kafka is not a viable option. It is not widely supported and, more importantly, it tightly couples the service to both the database and the broker, violating core microservice principles.15
+
+2.2 Pattern 1: The Transactional Outbox
+
+The Transactional Outbox pattern solves the dual-write problem by using the database's local transaction as the "single source of truth."
+Mechanism: Within the same, single database transaction that updates the business tables (e.g., orders), the service also inserts a record into a dedicated outbox table.15 This outbox record contains the full payload of the event that needs to be published.
+Guarantee: Because this is a single, atomic database transaction, ACID properties apply. The business data (in orders) and the event data (in outbox) are guaranteed to either both be committed or both be rolled back.16 The dual-write problem is eliminated.
+
+2.3 Pattern 2: Publishing the Event via Change Data Capture (CDC)
+
+The second half of the pattern is to reliably move the event from the outbox table to Kafka.
+	•	Anti-Pattern: A "poller" service that periodically runs SELECT * FROM outbox and then publishes to Kafka. This is complex, inefficient, and difficult to scale.
+	•	Expert Recommendation (CDC): The most robust and elegant solution is to use Change Data Capture (CDC) with a tool like Debezium.4 Debezium is configured to monitor the PostgreSQL Write-Ahead Log (WAL).16 When it detects an INSERT into the outbox table, it automatically and durably publishes a Kafka message containing the row's data.17
+This pattern moves the event-publishing logic from the application into the infrastructure, simplifying the Spring Boot service and guaranteeing that every committed event is published to Kafka exactly once.16
+
+2.4 Applying the Transactional Outbox Pattern to Flowable
+
+This pattern becomes even more powerful when applied to the Flowable engine itself. A common requirement is to publish a domain event (e.g., ProcessCompletedEvent) only when a Flowable process instance successfully finishes.
+	•	Anti-Pattern: Using CDC to monitor Flowable's internal history tables (e.g., ACT_HI_PROCINST, ACT_HI_VARINST 19). This is a brittle practice, as it tightly couples the system to Flowable's internal data model, which is not a public API and can change between versions.
+	•	Expert Recommendation (JavaDelegate Integration):
+	•	In the BPMN model, the final step of the process is modeled as a "Service Task."
+	•	This Service Task executes a JavaDelegate (which is a Spring Bean).
+	•	Within the JavaDelegate, the application injects its own OutboxEventRepository (a standard Spring Data JPA repository).
+	•	The execute method creates the domain event (e.g., OrderCompletedEvent) and saves it using the OutboxEventRepository.
+	•	Crucially, Flowable manages the entire operation within a single transaction. The INSERT into the outbox table and Flowable's final state updates (e.g., writing to ACT_HI_PROCINST) are part of the same atomic database transaction.
+	•	Debezium then reads this event from the outbox table and publishes it to Kafka.
+This ensures that the domain event is only published if and only if the Flowable process instance completes successfully, providing a bulletproof guarantee of data consistency between the process state and the event-driven ecosystem.
+
+3. A High-Performance Read Architecture: Implementing CQRS with Redis
+
+The selected stack is perfectly suited for implementing the Command Query Responsibility Segregation (CQRS) pattern. This pattern is essential for building scalable, high-performance systems by separating the write and read data models.
+
+3.1 The CQRS (Command Query Responsibility Segregation) Pattern
+
+CQRS is an architectural pattern that separates the data models for write operations (Commands) and read operations (Queries).20
+For this specific stack, the implementation is clear:
+	•	Write Side (Command): Spring Boot services, orchestrated by Flowable, write data to the normalized, ACID-compliant PostgreSQL database.20 This is optimized for data integrity and consistency.
+	•	Read Side (Query): Spring Boot services read data from a denormalized, in-memory Redis database.22 This is optimized for high-speed, low-latency reads.
+	•	Replication Bus: Kafka serves as the event bus that asynchronously replicates data from the write side to the read side.20
+This separation allows the system to scale reads and writes independently, a critical requirement for high-throughput applications.21
+
+3.2 Building Read-Model Projections
+
+The mechanism for populating the Redis read database is a "Projection." A Projection is a dedicated, event-driven consumer service that listens to the event stream from Kafka and builds a "materialized view" (the read model).27
+The end-to-end data flow for a high-performance read is as follows:
+	•	Command: A write operation occurs, which (as described in Section 2) atomically saves data to PostgreSQL and publishes a domain event to Kafka via the Transactional Outbox.
+	•	Projection: A separate Spring Boot service (the "Projector"), which is a Kafka consumer, receives this event (e.g., OrderCompletedEvent or CustomerUpdatedEvent).
+	•	Materialization: The Projector processes the event and writes (or updates) a denormalized JSON document into Redis, using a predictable business key (e.g., order:123 or customer:456).22
+	•	Query: When the user-facing API receives a request (e.g., GET /api/orders/123), the Spring Boot controller only reads from Redis.26 It never queries the transactional PostgreSQL database for this data. This provides sub-millisecond response times.
+
+3.3 Differentiating Caching (Cache-Aside) vs. CQRS Projections
+
+It is critical to distinguish between two distinct ways of using Redis in this architecture.
+	•	Pattern 1: Cache-Aside (Lazy Loading): This is the traditional caching pattern, which is the default behavior of Spring's @Cacheable annotation.29
+	•	Flow: The application first checks Redis for the data. If it is not found (a "cache miss"), the application queries PostgreSQL, retrieves the data, and then populates Redis (the cache).29
+	•	Use Case: This is ideal for accelerating reads of semi-static or low-volatility data, such as configuration details, user profiles, or product catalogs.32
+	•	Pattern 2: CQRS Projection (Event-Driven): This is a fundamentally different pattern.
+	•	Flow: Data is proactively pushed into Redis by the Kafka consumer (the Projector).28 The read-side application assumes the data is in Redis (a state of eventual consistency). There is no "cache miss" logic that falls back to PostgreSQL.
+	•	Use Case: This is the pattern for building the primary, high-performance query models for the application, such as dashboards, order history lists, or complex, denormalized process status summaries.
+Recommendation: Both patterns should be used. Use Cache-Aside for its simplicity in accelerating simple data. Use CQRS Projections as the core of the high-performance read architecture.
+
+4. Tactical Implementation: Integrating Flowable's Event Registry
+
+The nervous system of the hybrid architecture is Flowable's Event Registry. This model-driven component is responsible for all event-based interactions between the BPMN/CMMN engine and the outside world (Kafka).
+
+4.1 Core Concepts: Event and Channel Models
+
+Flowable's integration is not achieved by writing custom @KafkaListener annotations. Instead, it is configured through declarative models.10
+	•	Channel Definition (.channel file): This JSON file defines the "pipe," or the technical connection details.33 It specifies the technology (type: "kafka"), the direction (channelType: "inbound" or "outbound"), and the Kafka topic (topic: "customer-reviews").34
+	•	Event Definition (.event file): This JSON file defines the "message," or the data contract.33 It defines a unique event key (e.g., reviewReceivedEvent), the payload fields and their types (e.g., customerId, rating) 36, and, most importantly, the correlationParameters used to link the event to a specific process instance.10
+
+4.2 Pattern 1: Starting a Process from a Kafka Event
+
+This pattern is used when an external event should trigger a new business process.
+	•	BPMN Construct: Event Registry Start Event.10
+	•	Mechanism:
+	•	A BPMN process is modeled with an "Event Registry Start Event" as its starting point.
+	•	This start event is configured to listen for a specific Event Definition (e.g., reviewReceivedEvent).36
+	•	When the Flowable application (a Spring Boot service) deploys, the Event Registry automatically creates and manages a Kafka Consumer for the topic defined in the event's associated Channel.10
+	•	When a matching event arrives on the Kafka topic, the Flowable engine consumes it, automatically starts a new process instance, and maps the event payload (e.g., customerId) into process variables.10
+
+4.3 Pattern 2: Resuming a Waiting Process with a Kafka Event
+
+This pattern is used when a running process needs to "pause" and wait for an external event before continuing. This is fundamental to asynchronous sagas.
+	•	BPMN Construct: Receive Event Task 37 or Event Registry Boundary Event.33
+	•	Mechanism:
+	•	A process instance executes until it reaches a "Receive Event Task" (a "wait state").38
+	•	At this point, the engine persists the process state to PostgreSQL and "sleeps."
+	•	The Event Registry creates an event subscription, waiting for a correlated event (e.g., an event where the correlationParameter orderId matches the process instance's orderId variable).37
+	•	When the correlated event (e.g., PaymentConfirmedEvent) arrives on the Kafka topic, the engine "wakes up" the correct process instance, consumes the event, and continues execution.37
+
+4.4 Critical Insight: Native Idempotent Process Instantiation
+
+A core problem with event-driven systems is message duplication. Kafka provides "at-least-once" delivery semantics, which means consumers will receive duplicate messages.39 This raises a critical question: how to prevent a duplicate Kafka message from starting a duplicate business process?
+	•	Anti-Pattern: Building a custom, complex de-duplication cache (e.g., in Redis) within the consumer logic to track all processed message IDs.
+	•	Expert Solution (Flowable-Native): Flowable provides this functionality out-of-the-box.
+	•	In the .event file, a unique business key (e.g., messageId or orderId) is defined as a correlationParameter.10
+	•	The "Event Registry Start Event" construct in the BPMN model is configured to use this correlation key.
+	•	Flowable's documentation confirms the engine provides native idempotency: "It is possible to start always a new process or only in case there is no process with the same correlation parameters." 42
+This is a powerful, model-driven feature that provides an "exactly-once" guarantee for process instantiation, solving a major challenge of at-least-once message delivery without custom code.
+
+4.5 Table: Flowable Event Registry Code Examples
+
+The following table provides a concrete, code-level example of the .channel and .event files required to implement the "Start Process" pattern, based on a known-working proof-of-concept.35
+File: inbound.channel
+File: event-one.event
+json { "key": "testChannel", "channelType": "inbound", "type": "kafka", "deserializerType": "json", "topics": ["customers"], "channelEventKeyDetection": { "jsonField": "eventKeyValue" } }
+json { "key": "myEvent", "name": "My event", "inboundChannelKeys": ["test-channel"], "correlationParameters": [ { "name": "customerId", "type": "string" } ], "payload": [ { "name": "customerName", "type": "string" }, { "name": "amount", "type": "integer" } ] }
+
+4.6 Table: BPMN Event Construct Selection Guide
+
+This table provides a decision-making framework for modelers.
+BPMN Construct
+Use Case
+Process State
+Transactional Behavior
+Event Registry Start Event
+A new business process should be created when a Kafka event arrives.
+No instance exists.
+Creates a new process instance.
+Receive Event Task
+The process must stop and wait for a specific event (e.g., a reply) before it can continue.
+Instance is active and waiting (a "wait state").
+Resumes a waiting instance.
+Boundary Event (Interrupting)
+An event (e.g., OrderCancelledEvent) should interrupt and terminate the current task or sub-process.
+Instance is active.
+Changes the process flow, terminating the active task.
+Boundary Event (Non-Interrupting)
+An event (e.g., StatusUpdateEvent) should trigger a side-action (like logging) without stopping the main task.
+Instance is active.
+Triggers a new, parallel path of execution.
+
+5. Building for Resilience: Error Handling and Process Compensation
+
+A production system must be resilient to two types of failures: low-level technical failures (e.g., a message fails to parse) and high-level business failures (e.g., a saga must be rolled back).
+
+5.1 Kafka Consumer Error Handling: The Dead Letter Queue (DLQ)
+
+	•	Problem: A Spring Boot @KafkaListener fails to process a message (e.g., due to a JsonParseException). The default spring-kafka behavior is to retry and block the partition, which can halt all processing for that partition.
+	•	Solution: Implement a non-blocking retry mechanism that forwards failing messages to a Dead Letter Queue (DLQ), known as a Dead Letter Topic (DLT) in Spring Kafka.43
+	•	Implementation: The modern spring-kafka library provides this out-of-the-box with the @RetryableTopic annotation. This annotation, placed on the @KafkaListener method, provides non-blocking,-topic-based retries and automatic forwarding to a DLT upon final failure.43
+
+5.1.1 Dead Letter Queue Best Practices
+
+When implementing a DLQ strategy, the following practices are essential for debugging and reprocessing:
+	•	Differentiate Error Types: Only non-retryable, "poison pill" messages (e.g., schema validation errors, malformed data, business rule violations) should be sent to the DLT.44 Temporary, retryable errors (e.g., network timeouts, temporary service unavailability) should be handled by the retry mechanism, not the DLT.45
+	•	Preserve the Original Message: The message sent to the DLT must contain the exact, unmodified key and value (payload) from the original message.44 Do not wrap the original payload in an "error envelope" JSON object. This makes reprocessing simple.
+	•	Use Headers for Error Context: All metadata about the failure (the error message, stack trace, original topic, partition, offset, and failing consumer application name) should be added to the Kafka message headers.44 This keeps the payload pristine while providing full context for debugging.
+
+5.2 Saga Error Handling: BPMN Compensation
+
+	•	Problem: The hybrid architecture relies on Flowable to execute long-running sagas. What happens if a saga (a BPMN process) fails on step 3 of 5? For example, "Book Hotel" (Step 1) and "Book Flight" (Step 2) succeed, but "Charge Credit Card" (Step 3) fails. The system is now in an inconsistent state.
+	•	Solution: Implement the Saga Compensation pattern. This is a core feature of Flowable, implemented via BPMN Compensation Events.2
+	•	Mechanism:
+	•	The "forward" tasks (e.g., Book Hotel) are modeled inside a "Transaction Sub-Process".47
+	•	For each task that requires a rollback, a "Compensation Handler" task (e.g., Cancel Hotel) is modeled and attached. This handler is marked with isForCompensation="true".47
+	•	If a business error occurs, the process is routed to a "Cancel End Event."
+	•	When the Cancel End Event is reached, the Flowable engine automatically "triggers compensation" for all successfully completed activities within that sub-process, executing their compensation handlers (e.g., Cancel Flight, Cancel Hotel) in reverse order.47
+This is the primary advantage of using Flowable for sagas over pure Kafka choreography. Implementing reliable, stateful compensation logic in a choreographed system is notoriously difficult. With Flowable, the compensation logic is visually modeled, explicit, and transactionally executed by the engine.
+
+5.3 Alternative: CMMN for Unstructured, Event-Driven Cases
+
+Not all business processes are rigid, step-by-step procedures. For unpredictable, dynamic, or human-in-the-loop "cases," BPMN may be too restrictive.48
+	•	Recommendation: For these scenarios, use CMMN (Case Management Model and Notation), which is also a core part of the Flowable engine.48
+	•	Mechanism: A CMMN model defines a "case file" that contains various available tasks and "stages".49 These tasks are not executed in a fixed order but are enabled or disabled based on incoming events (e.g., from Kafka via the Event Registry 51) or human decision-making.48 This is ideal for scenarios like "Insurance Claim Investigation" or "Customer Complaint Handling," where the path of execution is unknown at the start.
+
+6. Production-Hardening the Stack: Expert-Level Configuration
+
+The default "out-of-the-box" settings for Spring Boot, PostgreSQL, and Kafka are not sufficient for a high-performance, resilient production system. The following configurations are essential.
+
+6.1 PostgreSQL Performance Tuning for Flowable
+
+The single-greatest performance bottleneck in a high-load Flowable system will be the database, specifically the history tables.
+	•	Tuning 1: Table Partitioning (Database Level): This is non-negotiable. The Flowable history tables (especially ACT_HI_PROCINST, ACT_HI_VARINST, ACT_HI_ACTINST, and ACT_HI_DETAIL) will grow to billions of rows.52 Standard PostgreSQL table partitioning must be used on these tables, typically partitioning by a time-based key (e.g., END_TIME_ by RANGE (month)).52 This allows old data to be archived or dropped efficiently and keeps queries on recent data fast.
+	•	Tuning 2: Flowable History Level (Application Level): In application.properties, configure the history level. The full level is too slow for production, as it records every single variable change.58
+	•	flowable.history-level=audit (Default): A good balance, storing all process and activity instances.
+	•	flowable.history-level=activity: A faster option that stores process/activity instances but only the final values of top-level variables.58
+	•	flowable.history-level=none: The fastest option. This may be viable for high-volume microservice orchestrations if auditing relies on the Kafka event log (from the Transactional Outbox) instead of the Flowable tables.59
+	•	Tuning 3: Asynchronous History (Application Level): Enable this for a major performance boost.
+	•	flowable.async-history.enable=true
+	•	This moves history-writing operations to a separate background thread pool, decoupling it from the main process execution thread.60 The process engine can complete the "forward" business logic much faster, as it is no longer waiting for history tables to be written.60
+	•	Tuning 4: Database Isolation Level: Flowable is explicitly designed to run with the Read Committed isolation level.61 Setting PostgreSQL to a higher level (e.g., Repeatable Read or Serializable) is unnecessary, will provide no benefit, and will cause severe performance degradation due to excessive locking.61
+
+6.2 Spring Boot HikariCP Tuning
+
+The default HikariCP (database connection pool) settings in Spring Boot are a "safe starting point, not an optimal one".62 The most common anti-pattern is setting maximumPoolSize to a large number (e.g., 200), which will overwhelm and slow down the database.62
+Expert Recommendation: A small, fixed-size connection pool provides the best performance and resilience.62
+
+Table: Production HikariCP Configuration (application.properties)
+
+
+Property
+Value
+Justification (Expert Recommendation)
+spring.datasource.hikari.maximum-pool-size
+20
+61 A small pool is faster. Do not guess. Start with the formula (CPU_cores * 2) + 1 62 and tune.
+spring.datasource.hikari.minimum-idle
+20
+62 Set equal to maximum-pool-size. This creates a fixed-size pool, preventing costly connection "churn" (creation/destruction).
+spring.datasource.hikari.connection-timeout
+5000
+62 5 seconds. The default 30s is dangerously long for a user-facing request. This enables a "fail-fast" strategy.
+spring.datasource.hikari.max-lifetime
+1200000
+62 20 minutes. Retires connections before infrastructure (firewalls, load balancers) silently kills them (often at 30 min).
+
+6.3 Spring Boot Kafka Producer Tuning
+
+The default producer settings are not configured for data integrity. They are optimized for "fire-and-forget" speed, which can lead to data loss.
+Expert Recommendation: Configure the producer for maximum durability and "exactly-once-per-producer" semantics. This is essential for the Transactional Outbox pattern to be reliable.
+
+Table: Production Kafka Producer Configuration (application.properties)
+
+
+Property
+Value
+Justification (Expert Recommendation)
+spring.kafka.producer.properties.acks
+all
+77 Critical. Guarantees the leader broker waits for all in-sync replicas to commit the message. This is the highest durability.
+spring.kafka.producer.properties.enable.idempotence
+true
+77 Critical. Ensures the producer cannot create duplicate messages on retries.
+spring.kafka.producer.properties.max.in.flight.requests.per.connection
+5
+77 This is safe to set > 1 only because idempotence is enabled, which preserves message ordering during retries.
+
+6.4 Spring Boot Redis Cache Tuning
+
+Redis configuration involves both the Spring application and the Redis server itself.
+	•	Application Level (Java Config): Do not rely on a single, global cache configuration. Use a RedisCacheManagerBuilderCustomizer bean to configure individual caches with specific Time-To-Live (TTL) values and behaviors.30Java@Beanpublic RedisCacheManagerBuilderCustomizer redisCacheManagerBuilderCustomizer() {    return (builder) -> builder     .withCacheConfiguration("itemCache",        RedisCacheConfiguration.defaultCacheConfig()         .entryTtl(Duration.ofMinutes(10)))     .withCacheConfiguration("customerCache",        RedisCacheConfiguration.defaultCacheConfig()         .entryTpl(Duration.ofMinutes(5)))     .disableCachingNullValues(); // Highly recommended}
+	•	Server Level (Redis Config): A common mistake is to think the eviction policy is set in application.properties.63 It is not. The maxmemory-policy is a server-side configuration in redis.conf. The default policy, noeviction 64, is dangerous as it will stop all writes when Redis is full. This must be changed to a policy like allkeys-lru (evict least recently used) or allkeys-lfu (evict least frequently used) to allow the cache to function correctly under pressure.65
+
+7. Compendium of Critical Anti-Patterns (And How to Avoid Them)
+
+The following anti-patterns are common and costly mistakes that teams make with this specific technology stack.
+
+7.1 The Anemic Domain Model
+
+	•	Anti-Pattern: Creating domain model objects (e.g., Order.java) that are just "bags of getters and setters." All business logic (calculateTotal(), shipOrder()) is located in a separate OrderService.66
+	•	Why it's Bad: Martin Fowler calls this a "fundamental horror" because it is "so contrary to the basic idea of object-oriented design," which is to combine data and behavior.66 The code becomes a procedural script, and the domain objects cannot guarantee their own validity.
+	•	Solution: Implement a Rich Domain Model. The Order object itself should have business methods (e.g., order.calculateTotal(), order.ship()). The OrderService (Application Layer) becomes a thin coordinator that loads the Order object and calls its methods.67
+
+7.2 Anemic Domain Events
+
+	•	Anti-Pattern: This is the event-driven equivalent of the Anemic Domain Model. The service publishes a "thin" event that contains only an ID: {"orderId": "123"}.13
+	•	Why it's Bad: Any consumer that receives this event is now forced to make a synchronous, blocking REST API call back to the OrderService to fetch the details of order 123. This re-couples the services, creates a "distributed monolith" 14, and negates the resilience and decoupling benefits of Kafka.69
+	•	Solution: Publish Rich Domain Events (or "Fat Events"). The event should be a self-contained data packet with all the information a consumer needs to do its job: {"orderId": "123", "customerId": "456", "totalAmount": 99.50, "shippingAddress": "..."}.
+
+7.3 The Thick Consumer
+
+	•	Anti-Pattern: Placing complex, reusable business logic directly inside the @KafkaListener method.13
+	•	Why it's Bad: This business logic is now "buried".13 It is invisible, cannot be reused by a REST controller or a Flowable JavaDelegate, and is difficult to unit test.
+	•	Solution: The @KafkaListener method should be a thin coordinator. Its only jobs are to deserialize the message, handle exceptions, and call a reusable domain service (the same rich service layer from 7.1) to execute the actual business logic.
+
+7.4 The Distributed Monolith
+
+	•	Anti-Pattern: Calling a system "microservices" but having all services communicate via synchronous, blocking REST API calls.14
+	•	Why it's Bad: This architecture has all the disadvantages of a monolith (tight coupling) combined with all the complexities of a distributed system (network failure, latency).14 If Service B is down, Service A fails, and the failure cascades.70
+	•	Solution: Use Kafka for asynchronous communication, as described in the hybrid model. Service A publishes an event to Kafka and moves on. Service B consumes it when it is ready.69 This breaks the temporal coupling and builds a resilient system.
+
+7.5 Kafka as a Threading-Avoidance Mechanism
+
+	•	Anti-Pattern: Using Kafka only to avoid blocking an HTTP request thread for a long-running task.71
+	•	The Nuance: With Java 17 and the advent of Virtual Threads (Project Loom), the problem of "blocking a platform thread" is largely solved. Virtual threads make it cheap to block.71 This does not make Kafka obsolete.
+	•	Solution: The reason for using Kafka is durability, decoupling, and resilience.71 If the application server dies mid-request, a Virtual Thread is lost, and the work is gone. If the application dies after publishing to Kafka, the event is safe and durably stored in the broker. The work will be processed when the consumer restarts. Use Kafka for its data integrity guarantees, not as a simple async task queue.
+
+8. Curated Credible Resources
+
+This analysis is based on patterns and practices established by the creators of the technologies and leading experts in the field. For further study, the following canonical resources are recommended.
+	•	8.1. Canonical Flowable-Kafka Integration:
+	•	Resource: "Flowable business processing from Kafka events" - A Devoxx talk by Tijs Rademakers (Flowable Project Lead) and Joram Barrez (Flowable Core Developer).10
+	•	Why: This is the definitive presentation from the creators of Flowable, demonstrating the exact hybrid microservice architecture, Event Registry, and CMMN/BPMN patterns described in this report.
+	•	Resource: The official Flowable Open Source Documentation, specifically the sections on the Event Registry.33
+	•	8.2. Distributed Transaction Patterns:
+	•	Resource: "Pattern: Transactional outbox" by Chris Richardson.15
+	•	Why: The canonical definition of this critical pattern from the author of "Microservices Patterns."
+	•	Resource: Confluent and Red Hat documentation on producer configuration and the outbox pattern.77
+	•	8.3. Performance Tuning:
+	•	Resource: The HikariCP GitHub repository documentation.79
+	•	Why: Direct, technical explanations from the author (Brett Wooldridge) on the "why" behind the recommended tuning parameters.
+	•	Resource: The official Flowable documentation on "Basic Performance Tuning".60
+	•	8.4. Architectural Anti-Patterns:
+	•	Resource: "AnemicDomainModel" by Martin Fowler.66
+	•	Why: The canonical, original definition of this fundamental anti-pattern by one of the most respected figures in software architecture.
+Works cited
+	•	Orchestrator Pattern VS Choreography (Event-Driven Saga) | by Arun Badhai - Medium, accessed on November 17, 2025, https://medium.com/@arun.badhai/saga-orchestrator-pattern-vs-choreography-event-driven-saga-003856d38279
+	•	Mastering Saga patterns for distributed transactions in microservices - Temporal, accessed on November 17, 2025, https://temporal.io/blog/mastering-saga-patterns-for-distributed-transactions-in-microservices
+	•	Saga Orchestration Pattern: An Implementation, accessed on November 17, 2025, https://ibm-cloud-architecture.github.io/eda-saga-orchestration/
+	•	Distributed transaction patterns for microservices compared | Red Hat Developer, accessed on November 17, 2025, https://developers.redhat.com/articles/2021/09/21/distributed-transaction-patterns-microservices-compared
+	•	Choreography vs. Orchestration in Microservices: Which Saga Strategy Should You Choose? | by Sapan Kumar Mohanty | Ultimate Systems Design and Building | Medium, accessed on November 17, 2025, https://medium.com/ultimate-systems-design-and-building/choreography-vs-orchestration-in-microservices-which-saga-strategy-should-you-choose-be0bb700a1d2
+	•	Saga Pattern in Microservices: An In-depth Overview · akash-coded spring-framework · Discussion #171 - GitHub, accessed on November 17, 2025, https://github.com/akash-coded/spring-framework/discussions/171
+	•	How to Implement the Saga Architectural Pattern in Microservices - The New Stack, accessed on November 17, 2025, https://thenewstack.io/implement-saga-patterns-in-microservices-with-nestjs-and-kafka/
+	•	Saga Orchestration vs Choreography - Temporal, accessed on November 17, 2025, https://temporal.io/blog/to-choreograph-or-orchestrate-your-saga-that-is-the-question
+	•	Event-Driven Architecture: Design Patterns and Anti-Patterns from ..., accessed on November 17, 2025, https://utkuapaydin.medium.com/event-driven-architecture-design-patterns-and-anti-patterns-from-the-trenches-92c411ede5a8
+	•	Flowable Business Processing from Kafka Events, accessed on November 17, 2025, https://www.flowable.com/blog/engineering/flowable-business-processing-from-kafka-events
+	•	Events, Workflows, Sagas? Keep Your Event-driven Architecture Sane. - Reddit, accessed on November 17, 2025, https://www.reddit.com/r/softwarearchitecture/comments/zx72ux/events_workflows_sagas_keep_your_eventdriven/
+	•	Flowable Business Processing from Kafka Events | PPTX - Slideshare, accessed on November 17, 2025, https://www.slideshare.net/slideshow/flowable-business-processing-from-kafka-events/192011049
+	•	Event Driven Architecture — 5 Pitfalls to Avoid : r/softwarearchitecture, accessed on November 17, 2025, https://www.reddit.com/r/softwarearchitecture/comments/wor6mk/event_driven_architecture_5_pitfalls_to_avoid/
+	•	How to Avoid Coupling in Microservices Design | Capital One, accessed on November 17, 2025, https://www.capitalone.com/tech/software-engineering/how-to-avoid-loose-coupled-microservices/
+	•	Pattern: Transactional outbox - Microservices.io, accessed on November 17, 2025, https://microservices.io/patterns/data/transactional-outbox.html
+	•	caching - system design - How to update cache only after persisted ..., accessed on November 17, 2025, https://stackoverflow.com/questions/72063950/system-design-how-to-update-cache-only-after-persisted-to-database
+	•	A Step-by-Step Guide to the Transactional Outbox Pattern with Kafka | by Cem Dırman, accessed on November 17, 2025, https://medium.com/@cemdrman/a-step-by-step-guide-to-the-transactional-outbox-pattern-with-kafka-2464ae018e9b
+	•	The Transactional Outbox Pattern: Transforming Real-Time Data Distribution at SeatGeek, accessed on November 17, 2025, https://chairnerd.seatgeek.com/transactional-outbox-pattern/
+	•	Cloud Native Java, accessed on November 17, 2025, https://gandrille.github.io/tech-notes/Spring/2016%20cloud-native-java-designing-resilient-systems-with-spring-boot-spring-cloud-and-cloud-foundry.pdf
+	•	CQRS Pattern Implementation in Spring Boot with Kafka | by Gurunath Busetti | Medium, accessed on November 17, 2025, https://medium.com/@guru.svu31/cqrs-pattern-implementation-in-spring-boot-with-kafka-75666d0d9217
+	•	Building a Scalable Video Platform with Spring Boot: Implementing Event Sourcing, CQRS, and S3 Integration Using Kafka and Redis — Code Frosting - Medium, accessed on November 17, 2025, https://medium.com/@ozziefel/building-a-scalable-video-platform-with-spring-boot-implementing-event-sourcing-cqrs-and-s3-14921fa2836f
+	•	Building Resilient Microservices with Spring Boot: Implementing Event Sourcing and CQRS with Kafka and Redis - Code Frosting, accessed on November 17, 2025, https://www.codefro.com/2024/09/02/building-resilient-microservices-with-spring-boot-implementing-event-sourcing-and-cqrs-with-kafka-and-redis/
+	•	Spring Boot & Postgres - CQRS (Multiple Database) - GitOrko, accessed on November 17, 2025, https://gitorko.github.io/post/spring-postgres-cqrs/
+	•	Patterns for Command Query Responsibility Segregation (CQRS) Read Models, accessed on November 17, 2025, https://thecodinginterface.com/blog/cqrs-read-model-patterns/
+	•	Building High-Performance Apps with Redis, PostgreSQL & Spring Boot - DEV Community, accessed on November 17, 2025, https://dev.to/olymahmud/building-high-performance-apps-with-redis-postgresql-spring-boot-3m36
+	•	CQRS - Redis, accessed on November 17, 2025, https://redis.io/solutions/microservices/cqrs/
+	•	Guide to Projections and Read Models in Event-Driven Architecture, accessed on November 17, 2025, https://event-driven.io/en/projections_and_read_models_in_event_driven_architecture/
+	•	How I Learned to Stop Worrying and Love Raw Events, Event Sourcing & CQRS with FastAPI and Celery - DEV Community, accessed on November 17, 2025, https://dev.to/markoulis/how-i-learned-to-stop-worrying-and-love-raw-events-event-sourcing-cqrs-with-fastapi-and-celery-477e
+	•	What is the default cache strategy when using Redis with spring or spring boot?, accessed on November 17, 2025, https://stackoverflow.com/questions/63976247/what-is-the-default-cache-strategy-when-using-redis-with-spring-or-spring-boot
+	•	Spring Boot Cache with Redis | Baeldung, accessed on November 17, 2025, https://www.baeldung.com/spring-boot-redis-cache
+	•	Caching patterns - Database Caching Strategies Using Redis - AWS Documentation, accessed on November 17, 2025, https://docs.aws.amazon.com/whitepapers/latest/database-caching-strategies-using-redis/caching-patterns.html
+	•	Offloading Heavy Reads to redis cache, using Spring Boot and PostgresQL. - Medium, accessed on November 17, 2025, https://medium.com/@mbizvotapiwanashe/offloading-heavy-reads-to-redis-cache-using-spring-boot-and-postgresql-49467025fdd2
+	•	Event Registry Introduction · Flowable Open Source Documentation, accessed on November 17, 2025, https://www.flowable.com/open-source/docs/eventregistry/ch06-EventRegistry-Introduction
+	•	Inbound Channel | Flowable Enterprise Documentation, accessed on November 17, 2025, https://documentation.flowable.com/latest/model/event-channel/reference/inbound-channel
+	•	onepointconsulting/flowable-event-registry-poc: Flowable ... - GitHub, accessed on November 17, 2025, https://github.com/onepointconsulting/flowable-event-registry-poc
+	•	Integrating Kafka with Flowable | The journey of a techie - WordPress.com, accessed on November 17, 2025, https://sukalpo.wordpress.com/2020/05/01/integrating-kafka-with-flowable/
+	•	What's the best practice to move a BPMN process instance to the ..., accessed on November 17, 2025, https://forum.flowable.org/t/whats-the-best-practice-to-move-a-bpmn-process-instance-to-the-next-step-with-kafka-event/12047
+	•	Getting Started · Flowable Open Source Documentation, accessed on November 17, 2025, https://www.flowable.com/open-source/docs/bpmn/ch02-GettingStarted
+	•	Idempotent Processing with Kafka | Nejc Korasa, accessed on November 17, 2025, https://nejckorasa.github.io/posts/idempotent-kafka-procesing/
+	•	Handling message duplication in Kafka - Tarka Labs, accessed on November 17, 2025, https://tarkalabs.com/blogs/kafka-message-duplication/
+	•	Taming Duplicate Kafka Messages with Idempotent Processing (Part 1) | by Elias Martinez, accessed on November 17, 2025, https://eliasmsedano.medium.com/taming-duplicate-kafka-messages-with-idempotent-processing-part-1-2d46db9e54c3
+	•	Event Registry Start | Flowable Enterprise Documentation, accessed on November 17, 2025, https://documentation.flowable.com/latest/reactmodel/bpmn/reference/event-registry-start
+	•	Dead Letter Queue for Kafka With Spring | Baeldung, accessed on November 17, 2025, https://www.baeldung.com/kafka-spring-dead-letter-queue
+	•	Error Handling via Dead Letter Queue in Apache Kafka - Kai Waehner, accessed on November 17, 2025, https://www.kai-waehner.de/blog/2022/05/30/error-handling-via-dead-letter-queue-in-apache-kafka/
+	•	Best Practices for Handling External Service Errors in Java Spring Boot with Kafka, accessed on November 17, 2025, https://dev.to/devaaai/best-practices-for-handling-external-service-errors-in-java-spring-boot-with-kafka-3kj5
+	•	What is the best practice to retry messages from Dead letter Queue for Kafka, accessed on November 17, 2025, https://stackoverflow.com/questions/65747292/what-is-the-best-practice-to-retry-messages-from-dead-letter-queue-for-kafka
+	•	BPMN 2.0 Constructs · Flowable Open Source Documentation, accessed on November 17, 2025, https://www.flowable.com/open-source/docs/bpmn/ch07b-BPMN-Constructs
+	•	case management model and notation (CMMN) - Flowable, accessed on November 17, 2025, https://www.flowable.com/solutions/cmmn
+	•	Using CMMN to Go Beyond Case Management - Flowable, accessed on November 17, 2025, https://www.flowable.com/blog/engineering/cmmn-beyond-case-management
+	•	Flowable's CMMN in action, part one – managing an insurance claim case, accessed on November 17, 2025, https://www.flowable.com/blog/business/flowables-cmmn-in-action-part-one-managing-an-insurance-claim-case
+	•	Flowable's CMMN in action, part five – insurance claim, independent ..., accessed on November 17, 2025, https://www.flowable.com/blog/business/flowables-cmmn-in-action-part-five-insurance-claim-independent-actions-across-a-case
+	•	java - Camunda - Database growing quickly issue - Stack Overflow, accessed on November 17, 2025, https://stackoverflow.com/questions/54050105/camunda-database-growing-quickly-issue
+	•	Perforamance optimisation - Discussion & Questions - Camunda Forum, accessed on November 17, 2025, https://forum.camunda.io/t/perforamance-optimisation/2924
+	•	Implementing Automation with Business Process Model and Notation (BPMN) for Margin Call Workflow - ResearchGate, accessed on November 17, 2025, https://www.researchgate.net/publication/396864379_Implementing_Automation_with_Business_Process_Model_and_Notation_BPMN_for_Margin_Call_Workflow
+	•	Implementing Automation with Business Process Model and Notation (BPMN) for Margin Call Workflow - Emerging Innovations Society, accessed on November 17, 2025, https://irjernet.com/index.php/fecsit/article/view/171/155
+	•	The Ultimate Guide to PostgreSQL Performance Tuning | by ANKUSH THAVALI | Medium, accessed on November 17, 2025, https://medium.com/@ankush.thavali/the-ultimate-guide-to-postgresql-performance-tuning-0d8134256125
+	•	PostgreSQL tuning: 6 things you can do to improve DB performance - NetApp Instaclustr, accessed on November 17, 2025, https://www.instaclustr.com/education/postgresql/postgresql-tuning-6-things-you-can-do-to-improve-db-performance/
+	•	History · Flowable Open Source Documentation, accessed on November 17, 2025, https://www.flowable.com/open-source/docs/bpmn/ch10-History
+	•	History Level Configuration | Flowable Enterprise Documentation, accessed on November 17, 2025, https://documentation.flowable.com/latest/develop/be/history-level
+	•	Asynchronous History Performance Benchmark - Flowable, accessed on November 17, 2025, https://www.flowable.com/blog/engineering/async-history-performance-benchmark
+	•	Basic Performance Tuning | Flowable Enterprise Documentation, accessed on November 17, 2025, https://documentation.flowable.com/latest/howto/howto/howto-basic-performance-tuning
+	•	Stop Guessing: A Deep Dive into Tuning HikariCP in Spring Boot for ..., accessed on November 17, 2025, https://medium.com/@mesfandiari77/stop-guessing-a-deep-dive-into-tuning-hikaricp-in-spring-boot-for-maximum-performance-829edb7195ee
+	•	When using spring-boot-starter-data-redis, how to set the eviction policy? LFU or LRU etc?, accessed on November 17, 2025, https://stackoverflow.com/questions/64489012/when-using-spring-boot-starter-data-redis-how-to-set-the-eviction-policy-lfu-o
+	•	Comprehensive Guide to Caching in Spring Boot with Redis | Pravin on Software, accessed on November 17, 2025, https://pravin.dev/posts/caching-in-springboot-with-redis/
+	•	Key eviction | Docs - Redis, accessed on November 17, 2025, https://redis.io/docs/latest/develop/reference/eviction/
+	•	Anemic Domain Model - Martin Fowler, accessed on November 17, 2025, https://martinfowler.com/bliki/AnemicDomainModel.html
+	•	Anemic Domain Model vs. Rich Domain Model | by Matthias Schenk - Medium, accessed on November 17, 2025, https://medium.com/@inzuael/anemic-domain-model-vs-rich-domain-model-78752b46098f
+	•	Event-Oriented Architecture Anti-Patterns - Sergi GP, accessed on November 17, 2025, https://sergigp.dev/event-oriented-architecture-anti-patterns-2dccc68ed282
+	•	Communicate Between Microservices with Apache Kafka | Okta Developer, accessed on November 17, 2025, https://developer.okta.com/blog/2022/09/15/kafka-microservices
+	•	Tightly coupled microservices : r/dotnet - Reddit, accessed on November 17, 2025, https://www.reddit.com/r/dotnet/comments/18bcgcc/tightly_coupled_microservices/
+	•	Need suggestions — Should we still use Kafka for async processing after moving to Java Virtual Threads? : r/apachekafka - Reddit, accessed on November 17, 2025, https://www.reddit.com/r/apachekafka/comments/1oockqp/need_suggestions_should_we_still_use_kafka_for/
+	•	Flowable business processing from Kafka events by Tijs ... - YouTube, accessed on November 17, 2025, https://www.youtube.com/watch?v=nX0dRiPqOmk
+	•	Devoxx Talk: Flowable Business Processing from Kafka Events from, accessed on November 17, 2025, https://www.classcentral.com/course/youtube-flowable-business-processing-from-kafka-events-by-tijs-rademakers-joram-barrez-195691
+	•	Open Source Business Automation - Flowable, accessed on November 17, 2025, https://www.flowable.com/getting-started-open-source
+	•	Flowable Open Source Documentation · Reference and User Guides, accessed on November 17, 2025, https://www.flowable.com/open-source/docs/
+	•	Getting Started with Channels and Events | Flowable Enterprise Documentation, accessed on November 17, 2025, https://documentation.flowable.com/latest/howto/howto/howto-getting-started-channel-events
+	•	Chapter 5. Kafka producer configuration tuning | Kafka configuration ..., accessed on November 17, 2025, https://docs.redhat.com/en/documentation/red_hat_streams_for_apache_kafka/2.6/html/kafka_configuration_tuning/con-producer-config-properties-str
+	•	The Transactional Outbox Pattern - Confluent Developer, accessed on November 17, 2025, https://developer.confluent.io/courses/microservices/the-transactional-outbox-pattern/
+	•	brettwooldridge/HikariCP: 光 HikariCP・A solid, high-performance, JDBC connection pool at last. - GitHub, accessed on November 17, 2025, https://github.com/brettwooldridge/HikariCP
+	•	Best Practices for Using Kafka with Spring Boot | by Nithin - Medium, accessed on November 17, 2025, https://medium.com/@contactnithin21/best-practices-for-using-kafka-with-spring-boot-3ae4ad2c0703
+	•	Kafka 3.2 Documentation, accessed on November 17, 2025, https://kafka.apache.org/32/documentation.html

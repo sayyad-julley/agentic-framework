@@ -1,0 +1,47 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: hms-onboarding-workflow
+  description: Handles new customer onboarding as a stateful Flowable saga
+  
+  # === ANNOTATIONS: The SDLC Integration ===
+  annotations:
+    # 1. Links to the Git repo (powers CI/CD, Code Coverage, etc.)
+    github.com/project-slug: ruchithaab-byte/hms-onboarding-workflow
+    
+    # 2. Test & Secure (SonarQube, Snyk)
+    sonarqube.org/project-key: hms-onboarding-workflow
+    # snyk.io/project-ids: '...' # Often provisioned and added later
+    
+    # 3. Deploy (ArgoCD, Kubernetes)
+    argocd/app-name: hms-onboarding-workflow
+    backstage.io/kubernetes-id: hms-onboarding-workflow
+    
+    # 4. Operate (PagerDuty, Grafana)
+    pagerduty.com/service-id: hms-onboarding-workflow # Or an integration key
+    grafana/dashboard-selector: 'app="hms-onboarding-workflow"'
+    
+    # 5. Conditional Annotations
+    
+
+spec:
+  type: service
+  lifecycle: experimental
+  owner: group:default/guests
+  system: system:default/examples
+  
+  # === RELATIONSHIPS: The Dependency Graph ===
+  dependsOn:
+    # All services depend on ScaleKit and Postgres
+    - api:default/scalekit
+    - resource:default/postgres-workflow_db
+
+    
+    
+    
+    
+    
+    
+  consumesApi:
+    - api:default/scalekit
+

@@ -1,0 +1,8 @@
+{
+  "key": "inbound-kafka-channel",
+  "channelType": "inbound",
+  "type": "kafka",
+  "deserializerType": "json",
+  "topics": ["{{ values.flowableKafkaTopic | default('workflow-triggers') }}"]
+}
+

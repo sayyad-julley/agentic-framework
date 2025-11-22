@@ -1,0 +1,404 @@
+
+An Architectural Blueprint for Production-Grade B2B Authentication: Integrating the Scalekit Java SDK with Spring Boot 3
+
+
+Executive Analysis: The Scalekit Java SDK for B2B Authentication Services
+
+
+Defining the Architectural Context: A B2B-First Platform
+
+An analysis of the Scalekit platform reveals it is not a generic, consumer-focused identity provider. Instead, it is "purpose-built for B2B" 1, a design decision that fundamentally shapes its architecture and, by extension, the architecture of any service built upon it. The platform's core architectural primitives are not individual users, but rather "Organizations," "Multi-tenancy," and "Workspaces".1 Organizations function as the primary "multi-tenant containers" 3, isolating user data, authentication methods, and enterprise features like Single Sign-On (SSO) and directory synchronization.
+The prominence of these multi-tenant constructs dictates a foundational architectural requirement for any Java service integrating with Scalekit. The service's domain model and persistence layer must be designed as multi-tenant from the outset. A traditional, single-tenant User model represents a fundamental anti-pattern, as it fails to capture the essential relationship between a user and the organization(s) they belong to. All data models should, therefore, be built around tenancy, and all subsequent authorization logic must be contextualized by an organization_id. This platform-driven design choice precedes all other implementation details.
+
+The Role of the Java SDK: A Typed Client, Not a Framework
+
+Scalekit provides official, secure libraries for multiple languages, including Java, Node.js, Python, and Go.4 The official Java library, scalekit-sdk-java, is explicitly identified as a "Scalekit client library for Scalekit API".7 This distinction is critical. The core Scalekit product is a comprehensive RESTful API 8 that uses standard OAuth 2.0 Client Credentials for its own authentication.8 The Java SDK is a typed convenience wrapper over this API, not an all-encompassing framework.
+This positioning as a client wrapper places the burden of implementation squarely on the developer. Unlike frameworks like Spring Security, which use Aspect-Oriented Programming (AOP) and Filter chains to manage the application lifecycle, the Scalekit SDK provides no such automation. Consequently, the developer is fully responsible for managing the consequences of calling this library. This includes all application-level state management, such as the handling of transient tokens in a headless flow 9; complete ownership of user session handling 10; and, most critically, ensuring the resilience of the service against the network failures inherent in any external API call. This report, therefore, focuses heavily on these developer-owned patterns.
+
+Core SDK Setup and Initialization
+
+Integration into a modern Java application, particularly one built with Spring Boot 3, begins with dependency management and client initialization.
+
+Dependency Management (Maven/Gradle)
+
+The Java SDK is available from the Maven Central repository.7 The latest stable 2.x version (e.g., 2.0.1 or higher) should be utilized to ensure access to the latest features and security patches.3
+Maven (pom.xml):
+
+XML
+
+
+<dependency>    <groupId>com.scalekit</groupId>    <artifactId>scalekit-sdk-java</artifactId>    <version>2.0.1</version></dependency>
+Gradle (build.gradle):
+
+Groovy
+
+
+implementation "com.scalekit:scalekit-sdk-java:2.0.1"
+
+Client Initialization (Spring Boot Pattern)
+
+The SDK client requires three credentials, which must be obtained from the Scalekit dashboard: SCALEKIT_ENVIRONMENT_URL, SCALEKIT_CLIENT_ID, and SCALEKIT_CLIENT_SECRET.2
+The recommended pattern for a Spring Boot application is to externalize these values in application.properties (or, preferably, a secrets manager) and define the client as a singleton @Bean in a configuration class. This allows the client to be injected into any service (such as an AuthService) that needs to interact with the Scalekit API.
+
+Java
+
+
+import com.scalekit.ScalekitClient;import org.springframework.beans.factory.annotation.Value;import org.springframework.context.annotation.Bean;import org.springframework.context.annotation.Configuration;@Configurationpublic class ScalekitConfig {    @Value("${scalekit.env.url}")    private String envUrl;    @Value("${scalekit.client.id}")    private String clientId;    @Value("${scalekit.client.secret}")    private String clientSecret;    @Bean    public ScalekitClient scalekitClient() {        // Initializes the client as a managed Spring bean        return new ScalekitClient(envUrl, clientId, clientSecret);    }}
+This initialization must be paired with a secure secrets management strategy. Hardcoding these sensitive values in version-controlled files is a critical anti-pattern 12 that will be addressed in Section 4.
+
+Section 1: The Primary Architectural Fork — Hosted vs. Headless Authentication
+
+The first and most significant architectural decision when building a user-facing authentication service is the choice of flow: delegating the user interface to Scalekit (Hosted) or building it entirely within the application (Headless). This choice fundamentally alters the complexity, security responsibility, and implementation pattern of the Java service.
+
+Pattern 1: The Hosted "Full-Stack Auth" (FSA) Flow
+
+This is the standard, redirect-based OAuth 2.0 / OpenID Connect (OIDC) flow. It is the recommended pattern for B2B SaaS applications that need to support a variety of authentication methods (passwordless, social, enterprise SSO) with minimal development overhead.2
+Concept:
+The Java service redirects the user to Scalekit's hosted login page. The user authenticates using their preferred method (e.g., Google login, Okta SSO). Upon success, Scalekit redirects the user back to a pre-registered callback endpoint in the Java application, providing a one-time authorization code.2 The Java service then exchanges this code for the user's tokens and profile.
+Integration Pattern (Spring Boot 3):
+The most robust and simple integration is achieved by leveraging Spring Security's native oauth2Login() support. This eliminates the need for complex, manual OIDC logic.10
+A minimal SecurityFilterChain bean would be configured as follows, delegating the OIDC flow to Spring Security:
+
+Java
+
+
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;import org.springframework.security.config.Customizer;import org.springframework.security.web.SecurityFilterChain;@Configuration@EnableWebSecuritypublic class SecurityConfig {    @Bean    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {        http           .authorizeHttpRequests(authz -> authz               .requestMatchers("/public", "/").permitAll() // Publicly accessible endpoints               .anyRequest().authenticated() // All other requests require auth            )            // Spring Security manages the OIDC flow and the /login/oauth2/code/* callback           .oauth2Login(Customizer.withDefaults());         return http.build();    }}
+This configuration requires corresponding OIDC provider details (client ID, secret, scopes, and discovery endpoints for Scalekit) to be set in application.properties.
+SDK Role in the FSA Flow:
+While oauth2Login() is effective, the Scalekit Java SDK provides explicit methods for more granular control, which are typically used within a custom controller.
+	•	Login Redirect: The service generates the URL for a "Login" button. The key method is scalekit.authentication().getAuthorizationUrl(redirectUri, options).13 The AuthorizationUrlOptions class is critical; it must be configured to include offline_access in the scopes to ensure a refreshToken is returned, enabling persistent sessions.13
+	•	Callback Handling: This is the core logic of the redirect endpoint (e.g., /api/callback). The service receives the authorization code and exchanges it using scalekit.authentication().authenticateWithCode(code, redirectUri, options).11 This method returns an AuthenticationResponse object. The user's profile and claims are then extracted via authResult.getIdTokenClaims().11
+Session Management Pattern:
+After authenticateWithCode succeeds, the service must establish a user session.
+	•	Stateful (MVC): The simplest pattern is to use Spring's HttpSession, storing the user principal: request.getSession().setAttribute("user", user).10
+	•	Stateless (BFF/SPA): The preferred pattern for modern web applications is to set a secure, HttpOnly, SameSite, and Secure cookie containing the idToken.10 This pattern is discussed in detail in Section 4.
+Critical Anti-Pattern: Redirect URI Mismatch:
+The most common integration failure is a mismatch between the redirect_uri parameter provided in the getAuthorizationUrl call and the exact URL registered in the Scalekit dashboard's "Redirects" section. They must match perfectly.2
+
+Pattern 2: The "Headless" API-Driven Flow (Passwordless)
+
+This pattern is for applications (typically SPAs or mobile apps) that require full control over the login UI and user experience. The Java service provides a custom API (e.g., /api/auth/send-otp) and orchestrates the authentication flow using the Scalekit SDK.9
+Architectural Pattern: The AuthService Abstraction:
+The headless flow is more complex and necessitates a central AuthService bean. This service encapsulates all Scalekit SDK logic, shielding the controllers from the implementation details.9 The primary responsibility of this AuthService is "managing state-to-auth_request_id mappings".9
+A headless passwordless flow is inherently stateful, as it spans two distinct API calls: the initiation (/api/auth/send-otp) and the verification (/api/auth/verify-otp). The sendPasswordlessEmail SDK method returns a unique authRequestId.15 The subsequent verifyPasswordlessEmail method requires both the user-supplied OTP and this exact authRequestId.9
+The Java service cannot trust the client (e.g., the browser) to hold and return the authRequestId, as this would expose it to tampering or replay attacks. Therefore, the AuthService must generate its own correlation ID (or leverage the user's HttpSession ID), securely store the authRequestId mapped to this server-side ID, and retrieve it during the verification step.
+This transient state storage must be a distributed cache. While an in-memory HashMap may suffice for local development, it is a non-scalable anti-pattern. For any multi-instance, production-ready application, this mapping must be stored in a distributed cache like Redis.9
+SDK Implementation (Code Analysis):
+	•	Sending the Email: The AuthService calls passwordlessClient.sendPasswordlessEmail(email, options).15 The SendPasswordlessOptions class allows for customization, such as setting the token expiration (setExpiresIn(300)), the magic link callback URL (setMagiclinkAuthUri(...)), and custom email template variables (setTemplateVariables(...)). The returned response.getAuthRequestId() is the critical value that must be cached.15
+	•	Verifying the Code: The verification endpoint retrieves the cached authRequestId (using the server-side correlation ID) and calls passwordlessClient.verifyPasswordlessEmail(code, authRequestId).9
+	•	Resending the Email: The SDK supports a resend mechanism via passwordlessClient.resendPasswordlessEmail(authRequestId). This call also requires the original, cached authRequestId.15
+
+Table: Architectural Trade-offs: Hosted (FSA) vs. Headless (API-Driven) Authentication
+
+This table summarizes the critical trade-offs for selecting an authentication flow.
+
+Dimension
+Hosted "Full-Stack Auth" (FSA) Pattern
+Headless "API-Driven" Pattern
+Primary Use Case
+B2B SaaS apps needing enterprise SSO, social logins, and passwordless fast, with minimal backend development.
+Custom-branded consumer apps (SPAs, mobile) requiring full control over the login/signup UI.
+UI/UX Control
+Low. UI is hosted and managed by Scalekit.2
+Total. Java service and its frontend clients are responsible for 100% of the UI.
+Backend Complexity
+Low. Spring Security oauth2Login() 10 handles most of the OIDC flow. Logic is concentrated in the callback handler.
+High. Requires a stateful AuthService 9, transient state management (via Redis) for auth_request_id 9, and secure API endpoint design.
+Security Posture
+High (Out-of-the-Box). Relies on the battle-tested OIDC protocol. Scalekit handles UI-based attack vectors (brute force, etc.).
+High (If Implemented Correctly). Developer is responsible for securing all auth API endpoints (rate limiting, state validation).
+Key SDK Methods
+getAuthorizationUrl(), authenticateWithCode() 13
+sendPasswordlessEmail(), verifyPasswordlessEmail() 15
+Primary Anti-Pattern
+redirect_uri mismatch.2
+Storing auth_request_id in-memory (fails in distributed systems) or trusting the client to hold it.
+
+Section 2: Securing Your Java Backend — The Resource Server Pattern
+
+Beyond user-facing login, the auth service must also address API security. This involves protecting the service's own backend endpoints (e.g., GET /api/v1/workspaces) from unauthorized access.
+
+The Architectural Pattern: OAuth 2.0 Resource Server
+
+In this pattern, the Java service (and any other microservice in the architecture) assumes the role of an OAuth 2.0 Resource Server.16 Its sole responsibility is to validate an Authorization: Bearer <token> header on every incoming request.
+Scalekit, in this context, acts as the Authorization Server.19 It is the trusted entity responsible for issuing the access tokens (e.g., during the login flow) that the Resource Server will consume.22
+
+Token Format and Validation: Stateless JWTs
+
+Scalekit issues access tokens in the JSON Web Token (JWT) format.22 JWTs are self-contained, cryptographically-signed tokens.24 This self-contained nature is their primary architectural advantage: a Resource Server can validate a JWT statelessly by checking its signature, issuer, and expiration, without needing to make a database lookup or a network call to the Authorization Server on every single request.24
+This stateless validation model is crucial for building scalable, high-performance microservices. However, it introduces a new problem: how does the Resource Server get the public key to validate the signature, and how does it handle key rotation? A naive implementation would hardcode Scalekit's public signing key directly into the Java service. This is a severe anti-pattern, as it is brittle and guarantees a catastrophic outage when Scalekit inevitably rotates its signing keys for security.
+The OIDC-compliant solution is the JSON Web Key Set (JWKS) endpoint.22 Scalekit exposes a /.well-known/jwks URL 26 which contains a JSON document listing its current public signing keys, each identified by a Key ID (kid). An incoming JWT, in turn, contains a kid in its header.22 This kid instructs the Resource Server on exactly which key from the JWKS set to use for validation. Therefore, the entire, complex problem of stateless JWT validation and automated key rotation is solved by configuring the Java service to point at this single JWKS URL.
+
+Implementation Pattern (Spring Boot 3)
+
+Spring Boot 3, via the Spring Security project, provides a robust, out-of-the-box implementation of the JWKS-based Resource Server pattern.
+	•	Dependency: Add the spring-boot-starter-oauth2-resource-server dependency to the project.20
+	•	Configuration (application.properties): This is the most critical step. The service is configured to trust Scalekit by pointing to its JWKS and issuer URIs. Spring Security handles the rest, including fetching, caching, and rotating the keys.Properties# Point Spring Security to Scalekit's JWKS endpoint for public keys# The path format is /.well-known/jwks # The property name is defined by Spring [28, 29]spring.security.oauth2.resourceserver.jwt.jwk-set-uri=https://{YOUR_SCALEKIT_ENV_URL}/.well-known/jwks# Also validate the "iss" (issuer) claim to ensure the token is from Scalekit# This prevents a confused deputy attack [29, 30, 31]spring.security.oauth2.resourceserver.jwt.issuer-uri=https://{YOUR_SCALEKIT_ENV_URL}
+	•	Code (SecurityFilterChain): A simple configuration bean enables the resource server validation.Java@Configuration@EnableWebSecuritypublic class ResourceServerSecurityConfig {    @Bean    public SecurityFilterChain resourceServerFilterChain(HttpSecurity http) throws Exception {        http           .authorizeHttpRequests(authz -> authz               .requestMatchers("/public/**").permitAll() // E.g., webhooks, health checks               .anyRequest().authenticated() // All other APIs are protected            )            // Enable OAuth2 Resource Server validation using JWTs            // This configures the filter chain to find and validate Bearer tokens           .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults()));        // Disable CSRF for stateless, token-based APIs        http.csrf(csrf -> csrf.disable());        return http.build();    }}
+
+Authorization (Post-Authentication)
+
+Once Spring Security successfully validates the JWT, it populates the SecurityContextHolder with an Authentication object, whose principal is a Jwt object. From here, fine-grained authorization logic can be applied.
+This is how B2B tenancy and permissions are enforced. The JWT payload will contain claims provided by Scalekit, such as roles, permissions, and, most importantly, the org_id.32 Authorization logic, typically using Spring's @PreAuthorize annotation, can then inspect these claims to make access decisions.
+Example:
+@PreAuthorize("@permissionService.isUserInOrg(authentication, #orgId) and hasAuthority('SCOPE_read:projects')")
+public Project getProject(@PathVariable String orgId, @PathVariable String projectId)
+
+Section 3: User Data Synchronization Patterns
+
+
+Architectural Challenge: The "Shadow Data" Problem
+
+A significant architectural challenge arises from the separation of identity and business data. Scalekit serves as the source of truth for identity (e.g., users, organizations, roles) 3, while the Java service is the source of truth for business data (e.g., projects, documents, invoices).
+A production application must enforce relational integrity. For example, a projects table will almost certainly have a created_by_user_id column with a FOREIGN KEY constraint referencing a local users table. This is impossible to achieve if a local users table does not exist. Relying on volatile JWT claims to stitch this information together at runtime is an anti-pattern that is brittle and non-performant.
+Therefore, the Java service must maintain a local, "shadow" copy of the Scalekit user and organization tables. This decision, while necessary, creates a critical data synchronization problem: how to keep this shadow database consistent with the source of truth (Scalekit). The following patterns are the primary solutions.
+
+Pattern A: Just-in-Time (JIT) Provisioning
+
+Concept: JIT provisioning is an implicit, pull-based synchronization model. A user account is created or updated in the local shadow database at the moment they first log in.34
+Implementation: This pattern is implemented in the OIDC callback handler (from Section 1).
+	•	After a successful login, the service calls scalekit.authentication().authenticateWithCode(...).13
+	•	It extracts the idTokenClaims.13 These claims, part of the OIDC assertion, contain the user's attributes (email, name, etc.).36
+	•	The service handler then performs an "upsert" (update or insert) operation against its local database.Java// Inside the /api/callback OIDC controllerAuthenticationResponse authResult = scalekit.authentication().authenticateWithCode(code,...);var claims = authResult.getIdTokenClaims();String userEmail = claims.getEmail();// Perform a local "upsert"User localUser = userRepository.findByEmail(userEmail)   .orElseGet(() -> new User(userEmail)); // Create if not existslocalUser.setFullName(claims.getName());localUser.setScalekitId(claims.getSubject()); // Store the Scalekit ID//... update other attributes from claims...userRepository.save(localUser);// Now create the local session for this 'localUser'
+...
+```
+Pros:
+	•	Simple to implement; the logic is contained entirely within the existing login flow.
+	•	Requires no additional infrastructure, public endpoints, or complex security.
+Cons (Critical Flaw):
+	•	Stale Data: The user's local record is only updated when they actively log in.
+	•	No De-provisioning: This is the critical security flaw of JIT. If an administrator deactivates a user or revokes their permissions in Scalekit, the local shadow copy remains unchanged, active, and privileged. The user's access is only revoked upon their next login attempt, which may never happen.39 This is unacceptable for enterprise-grade B2B security.
+
+Pattern B: Real-Time Eventing (Webhooks)
+
+Concept: Webhooks are an explicit, push-based synchronization model. Scalekit is configured to send a real-time HTTP POST request to a secure, public endpoint on the Java service whenever an identity event occurs.40
+This is the architecturally-preferred solution for maintaining data consistency, as it handles the full user lifecycle, including the critical de-provisioning flaw of JIT. Scalekit provides webhooks for numerous directory sync events, such as scalekit.dir.user.create, scalekit.dir.user.update, and, most importantly, scalekit.dir.user.delete.43
+Implementation (Spring Boot):
+	•	Create a public @RestController endpoint (e.g., @PostMapping("/api/webhooks/scalekit")).
+	•	This endpoint must not be protected by the Resource Server filter chain (Section 2), as it needs to be called by Scalekit, which does not have a user's JWT. It must use a different security mechanism.
+Critical Security Pattern: Webhook Signature Verification
+A public webhook endpoint is a significant security vulnerability. An attacker could discover this endpoint and send fake scalekit.dir.user.delete events, potentially de-provisioning all users in the application's shadow database.
+Therefore, the endpoint must cryptographically verify that the request originated from Scalekit.
+	•	Scalekit provides an automatically generated "signing secret" for each webhook in its dashboard.45
+	•	When sending an event, Scalekit uses this secret to create an HMAC (Hash-based Message Authentication Code) signature of the raw request body.
+	•	This signature is included in an HTTP header, such as X-Scalekit-Signature.45
+	•	The Java endpoint must read the raw request body (as bytes, before JSON parsing), re-compute the HMAC signature using its stored copy of the secret, and perform a constant-time comparison against the signature in the header. If they do not match, the request must be rejected with an HTTP 401 or 403.
+The Scalekit Java SDK provides utility functions to perform this complex verification.45
+Conceptual Code:
+
+Java
+
+
+import com.scalekit.sdk.webhooks.WebhookVerifier; // Assuming a class like this existsimport org.springframework.http.ResponseEntity;import org.springframework.web.bind.annotation.*;@RestController@RequestMapping("/api/webhooks")public class WebhookController {    private final String webhookSecret = System.getenv("SCALEKIT_WEBHOOK_SECRET");    @PostMapping("/scalekit")    public ResponseEntity<Void> handleScalekitWebhook(        @RequestBody String rawBody, // Must read the raw string/bytes        @RequestHeader("X-Scalekit-Signature") String signature    ) {        // 1. Verify the signature        //  imply an SDK method exists for this        if (!WebhookVerifier.verify(rawBody, signature, webhookSecret)) {            // Fails verification, reject the request            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();        }        // 2. Signature is valid, now process the event        // The endpoint must be idempotent (handle duplicate events)        WebhookEvent event = parseEvent(rawBody);                // 3. Acknowledge the event *immediately* to prevent retries        // and process the logic asynchronously.        webhookProcessingService.processEvent(event);         return ResponseEntity.ok().build();    }}
+
+Pattern C: Directory Synchronization (SCIM)
+
+Concept: SCIM (System for Cross-domain Identity Management) is a standardized REST protocol designed for automated, bi-directional provisioning of users and groups between identity systems.46
+This pattern is less about the Java service syncing with Scalekit, and more about Scalekit syncing with the customer's Identity Provider (IdP), such as Okta, Google Workspace, or Azure AD.41 Scalekit provides a unified SCIM API, and when a customer provisions a new user in their Okta directory, Scalekit receives this event via SCIM. Scalekit then uses Webhooks (Pattern B) to push this change down to the Java service. Understanding this full data flow is essential for building an enterprise-ready B2B application.
+
+Table: Data Synchronization Strategies (JIT vs. Webhooks)
+
+This table summarizes the trade-offs between the two primary synchronization patterns.
+
+Strategy
+Mechanism
+Data Freshness
+Implementation Complexity
+Handles De-provisioning?
+JIT Provisioning
+Pull-on-Login. User data is read from OIDC/SAML claims 37 during the login callback and used to "upsert" a local user record.
+Stale. Data is only updated when the user actively logs in. A user deactivated in Scalekit remains active in the local DB.
+Low. Logic is contained within the existing login callback controller.13
+No. (Critical Flaw)
+Webhook Sync
+Push-on-Event. Scalekit sends a real-time event (e.g., user.delete) to a public endpoint on the Java service.40
+Real-Time. Changes are reflected within seconds, ensuring the local DB is a consistent shadow of the identity provider.
+High. Requires a public, idempotent endpoint with complex, non-negotiable signature verification.45
+Yes. (Critical Feature)
+
+Section 4: Critical Analysis — Security, Resilience, Patterns, and Anti-Patterns
+
+A production-grade auth service is defined not just by its features, but by its resilience and security. As established, the Scalekit SDK is a client, meaning the developer is responsible for implementing these production-readiness patterns.
+
+Resilience Patterns (Handling Network Failure)
+
+Every Scalekit SDK method (e.g., authenticateWithCode, sendPasswordlessEmail) is a synchronous, blocking network call to an external, third-party API.53 This API will, at some point, fail due to timeouts, transient network errors, or a platform outage. In a high-traffic Spring Boot application, if all web server threads become blocked waiting for these SDK calls to timeout, the service will suffer thread exhaustion and a cascading failure, taking the entire application offline.53 Therefore, all external SDK calls are a liability that must be wrapped in a resilience pattern.
+
+Pattern: The Circuit Breaker (Resilience4j)
+
+The Circuit Breaker pattern is the standard solution.53 It wraps the dangerous network call. After a configured threshold of failures, the circuit "opens," and all subsequent calls fail-fast (e.g., by immediately throwing a CallNotPermittedException 55) without making the network call. This protects the Java service's resources.
+Implementation (Spring Boot 3):
+	•	Add the spring-cloud-starter-circuitbreaker-resilience4j and spring-boot-starter-aop dependencies.55
+	•	In the AuthService (or any service making SDK calls), annotate every public method that calls the Scalekit SDK with @CircuitBreaker. This annotation must specify a fallbackMethod.
+Code Example (AuthService):
+
+Java
+
+
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;import org.springframework.stereotype.Service;@Servicepublic class ScalekitAuthService {    //... constructor, scalekitClient...    @CircuitBreaker(name = "scalekit", fallbackMethod = "fallbackAuth") // [60, 61]    public AuthenticationResponse performCodeExchange(String code, String redirectUri) {        // This is the dangerous network call        return scalekitClient.authentication().authenticateWithCode(code, redirectUri, null);    }    @CircuitBreaker(name = "scalekit", fallbackMethod = "fallbackSend")    public SendPasswordlessResponse sendOtp(String email) {        // This is also a dangerous network call        return scalekitClient.passwordless().sendPasswordlessEmail(email, null);    }        // Fallback method must match the original signature + Throwable [55, 58, 60]    private AuthenticationResponse fallbackAuth(String code, String redirectUri, Throwable t) {        log.warn("Scalekit circuit is OPEN for performCodeExchange: {}", t.getMessage());        // Fail gracefully for the user        throw new ServiceUnavailableException("Authentication service is temporarily unavailable.");    }    private SendPasswordlessResponse fallbackSend(String email, Throwable t) {        log.warn("Scalekit circuit is OPEN for sendOtp: {}", t.getMessage());        throw new ServiceUnavailableException("Authentication service is temporarily unavailable.");    }}
+
+Pattern: Caching Public Keys (JWKS)
+
+The Resource Server pattern (Section 2) provides significant built-in resilience. By configuring spring.security.oauth2.resourceserver.jwt.jwk-set-uri 29, the Spring framework automatically fetches and caches the JWKS public keys.22 This is a critical performance and resilience feature, as it avoids a network call to Scalekit for every single API request validation. For other caching needs, Spring's @EnableCaching 62 and @Cacheable 62 annotations can be used.
+
+Security Patterns (The "Must-Dos")
+
+
+Pattern: Externalized Secret Management
+
+Anti-Pattern: Hardcoding sensitive credentials (CLIENT_SECRET, webhook secrets) in source code 66, pom.xml, or application.properties files 67, and committing them to source control.67 This is a high-severity vulnerability.
+Pattern: Secrets must be externalized from the application artifact.
+	•	Good (Standard): Environment Variables.68 Spring Boot automatically reads properties from the environment, and this is the standard for Docker/Kubernetes deployments.
+	•	Better (Enterprise): A dedicated Secrets Manager. Spring Boot has first-class integration with providers like HashiCorp Vault 70, AWS Secrets Manager 75, and Azure Key Vault 76 via official Spring Cloud starters.
+
+Pattern: The Token Handler (Backend-for-Frontend)
+
+Anti-Pattern: A Single Page Application (SPA) that receives tokens after login and stores them in localStorage.77 This makes the tokens trivial to steal via a simple Cross-Site Scripting (XSS) attack. Naive API calls from the frontend also lead to repeated, complex auth logic in JavaScript.78
+Pattern: The Java service should act as a Token Handler or Backend-for-Frontend (BFF).77
+	•	The Java service (BFF) performs the OIDC flow (Section 1).
+	•	It receives the idToken and refreshToken from Scalekit.
+	•	It never sends these tokens to the SPA. Instead, it stores them in a secure, HttpOnly, Secure, and SameSite=Strict cookie.14
+	•	The SPA, served from the same domain as the BFF, automatically sends this cookie with every request.
+	•	The BFF receives the request, extracts the token from the cookie, validates it, and then proxies the request to downstream microservices, attaching the token as a Bearer header.
+	•	In this architecture, the SPA never sees or handles a token, neutralizing the XSS attack vector.
+
+Identified Anti-Patterns (The "Must-Nots")
+
+	•	Anti-Pattern: The "Trusted Subsystem" Fallacy.80
+	•	Concept: In a microservices architecture, a "Payment Service" receives a request from an "Order Service." The Payment Service trusts the request because it came from the internal network and bypasses token validation.
+	•	Correction (Zero Trust): This violates the Zero Trust principle. Every microservice must be configured as a Resource Server (Section 2) and validate the user's JWT on every request. The network is never trusted.
+	•	Anti-Pattern: Exposing Secrets Client-Side.66
+	•	Concept: A developer might embed the SCALEKIT_CLIENT_ID 11 or an API key in JavaScript to call Scalekit directly from the browser.
+	•	Correction: Any key embedded in client-side code is a public key and will be compromised.68 All SDK calls must happen on the trusted backend (the Java service).
+	•	Anti-Pattern: Weak or Missing API Rate Limiting.12
+	•	Concept: The Java service's own headless endpoints (e.g., /api/auth/send-otp) are left open to the public internet without rate limiting.
+	•	Correction: An attacker can call this endpoint in a loop, abusing the service to send thousands of emails (an "email bomb" attack) or performing brute-force attacks on OTPs.12 The Java service must implement its own rate limiting (e.g., using Resilience4j's RateLimiter or a Spring Cloud Gateway) on all public-facing authentication endpoints.
+
+Table: Production-Readiness Checklist (Patterns & Anti-Patterns)
+
+This checklist synthesizes the critical "dos and don'ts" for a production-grade service.
+
+Domain
+Pattern (Best Practice)
+Anti-Pattern (To Avoid)
+Credential Management
+Externalize secrets in Environment Variables or a Vault.69
+Hardcoding CLIENT_SECRET in application.properties or source code.66
+Frontend Architecture
+Token Handler (BFF) Pattern. Store tokens in secure HttpOnly cookies.14 The SPA never sees tokens.
+Storing JWTs in localStorage (vulnerable to XSS). SPA handles tokens directly.78
+Backend-to-Backend
+Zero Trust. Every microservice acts as a Resource Server (Section 2) and validates the JWT on every request.
+Trusted Subsystem.80 Internal services bypass token validation, trusting the caller.
+Network Resilience
+Circuit Breaker. Wrap all SDK network calls (e.g., authenticateWithCode) in @CircuitBreaker.54
+Making direct, synchronous SDK calls, leading to cascading failures when Scalekit is down.
+Data Synchronization
+Secure Webhooks 40 for real-time de-provisioning, with mandatory signature verification.45
+JIT Provisioning Only. This is a security risk, as deactivated users remain active locally.39
+Login Flow
+Hosted FSA (OIDC). Use Spring's oauth2Login().10 It is secure, simple, and robust.
+Building a custom, complex headless flow 9 when not absolutely necessary for UI.
+API Security
+Stateless JWT Validation via the jwk-set-uri.29 Keys are cached and rotated automatically.22
+Hardcoding a public key (brittle) or calling a /token-introspect endpoint (stateful, slow) for every API call.
+
+Section 5: Strategic Recommendations and Concluding Architectural Blueprint
+
+
+Summary of Key Findings
+
+This analysis has examined the Scalekit Java SDK not as a standalone framework, but as a typed client for a B2B-first identity API. The investigation concludes that building a production-grade authentication service requires the implementing developer to select and integrate robust architectural patterns. The SDK provides the tools to interact with the API, but the Java service is solely responsible for state management (for headless flows), data synchronization (for a local user store), and network resilience (for all external calls).
+
+Final Architectural Blueprint (Recommendation)
+
+For a new, production-grade B2B SaaS application on Spring Boot 3, the following hybrid architecture is recommended. This blueprint balances security, simplicity, and real-time data consistency by selecting the strongest patterns from this report.
+	•	User Authentication (Pattern: Hosted FSA):Implement the Hosted "Full-Stack Auth" (FSA) Pattern.2 Use Spring Security 3's oauth2Login() 10 configured for OIDC. This pattern provides maximum security and features (OIDC compliant, out-of-the-box support for SSO, Social Logins, and Passwordless) with minimum backend complexity.
+	•	Web Architecture (Pattern: BFF):The primary Java service should act as a Backend-for-Frontend (BFF).77 It will perform the OIDC flow, receive the tokens from Scalekit, and store them securely in HttpOnly, SameSite=Strict cookies.14 The frontend client (e.g., React SPA) is thus sandboxed and never handles tokens, neutralizing XSS-based token theft.
+	•	API Security (Pattern: Resource Server):All backend services (including the BFF and any downstream microservices) must be configured as OAuth2 Resource Servers.16 Each service will validate incoming JWTs (passed from the BFF) by pointing its configuration to the Scalekit jwk-set-uri 29 in its application.properties.
+	•	Data Synchronization (Pattern: JIT + Webhooks):Implement a hybrid data synchronization model to get the best of both patterns:
+	•	JIT Provisioning 36: Use the claims from the login callback (authenticateWithCode) to create or update the local "shadow" user in the database on their first login. This handles user creation simply.
+	•	Webhook Sync 40: Implement a secure webhook endpoint 45 to listen specifically for scalekit.dir.user.delete and scalekit.dir.user.update (for role/status changes). This closes the critical security hole left by JIT, enabling real-time de-provisioning and role updates.
+	•	Resilience (Pattern: Circuit Breaker):All external network calls to the Scalekit SDK (e.g., in the OIDC callback, webhook handler, or any other admin service) must be wrapped in Resilience4j @CircuitBreaker annotations.54 This requires defining appropriate fallback methods to prevent cascading failures during a Scalekit outage.
+	•	Security (Pattern: Secret Management):All secrets (Scalekit CLIENT_SECRET, Webhook Signing Secret) must be externalized from the application artifact. The use of Environment Variables (for containerized deployments) or a dedicated secrets manager like HashiCorp Vault 69 is non-negotiable.
+This blueprint provides a secure-by-default, resilient, and scalable architecture that correctly leverages the power of the Scalekit B2B platform within a modern Spring Boot 3 ecosystem.
+Works cited
+	•	User Management for B2B SaaS | Org Roles, Access Control & SSO - Scalekit, accessed on November 17, 2025, https://www.scalekit.com/user-management
+	•	Quickstart - Scalekit Docs, accessed on November 17, 2025, https://docs.scalekit.com/fsa/quickstart/
+	•	Create and manage organizations - Scalekit Docs, accessed on November 17, 2025, https://docs.scalekit.com/fsa/guides/manage-organization/
+	•	Developer resources - Scalekit Docs, accessed on November 17, 2025, https://docs.scalekit.com/dev-kit/
+	•	API Auth Built for Scale | OAuth & Secure Access with Scalekit, accessed on November 17, 2025, https://www.scalekit.com/api-auth
+	•	Scalekit Docs: Auth stack for AI apps, accessed on November 17, 2025, https://docs.scalekit.com/
+	•	scalekit-sdk-java - Maven Repository, accessed on November 17, 2025, https://mvnrepository.com/artifact/com.scalekit/scalekit-sdk-java
+	•	Scalekit API Reference, accessed on November 17, 2025, https://docs.scalekit.com/apis/
+	•	Spring Boot 3 passwordless authentication: OTP and magic link with Scalekit, accessed on November 17, 2025, https://www.scalekit.com/blog/spring-boot-3-passwordless-authentication-scalekit
+	•	Implementing SSO with Java Spring Boot | Scalekit Blog, accessed on November 17, 2025, https://www.scalekit.com/blog/sso-java-spring-boot
+	•	Getting started with social connections - Scalekit Docs, accessed on November 17, 2025, https://docs.scalekit.com/social-logins/quickstart/
+	•	API authentication in B2B SaaS: Methods and best practices - Scalekit, accessed on November 17, 2025, https://www.scalekit.com/blog/api-authentication-b2b-saas
+	•	Implement user login | Scalekit Docs, accessed on November 17, 2025, https://docs.scalekit.com/fsa/guides/implement-login/
+	•	JSON Web Token for Java - OWASP Cheat Sheet Series, accessed on November 17, 2025, https://cheatsheetseries.owasp.org/cheatsheets/JSON_Web_Token_for_Java_Cheat_Sheet.html
+	•	Passwordless quickstart Scalekit Docs, accessed on November 17, 2025, https://docs.scalekit.com/passwordless/quickstart/
+	•	OAuth 2.0 Resource Server :: Spring Security, accessed on November 17, 2025, https://docs.spring.io/spring-security/reference/servlet/oauth2/resource-server/index.html
+	•	How to Create an OAuth2 Resource Server w/ Spring Boot 3 [Secure APIs] - YouTube, accessed on November 17, 2025, https://www.youtube.com/watch?v=bElJjuKs_Vo
+	•	Guardians of Secrets: Spring Security Enchantment for Microservices Safeguarding, accessed on November 17, 2025, https://www.codefro.com/2023/09/26/guardians-of-secrets-spring-security-enchantment-for-microservices-safeguarding/
+	•	OAuth 2.0 Resource Server With Spring Security | Baeldung, accessed on November 17, 2025, https://www.baeldung.com/spring-security-oauth-resource-server
+	•	JWT Authentication with Spring 6 Security | by Code Wiz | Javarevisited - Medium, accessed on November 17, 2025, https://medium.com/javarevisited/jwt-authentication-with-spring-6-security-bdc49bedc5e7
+	•	OAuth 2.0 and OIDC: A Guide to Secure Authorization & Authentication | Scalekit, accessed on November 17, 2025, https://www.scalekit.com/oauth-authentication
+	•	API Authentication quickstart - Scalekit Docs, accessed on November 17, 2025, https://docs.scalekit.com/m2m/quickstart/
+	•	Guide to Understanding JSON Web Tokens (JWT) for Devs - Scalekit, accessed on November 17, 2025, https://www.scalekit.com/blog/json-web-tokens-guide-for-developers
+	•	API key vs JWT: Secure B2B SaaS with modern M2M authentication - Scalekit, accessed on November 17, 2025, https://www.scalekit.com/blog/apikey-jwt-comparison
+	•	M2M authentication - Scalekit, accessed on November 17, 2025, https://www.scalekit.com/m2m-authentication
+	•	Implementing OAuth for MCP servers: A developer's guide - Scalekit, accessed on November 17, 2025, https://www.scalekit.com/blog/implement-oauth-for-mcp-servers
+	•	JWT Security Best Practices | Curity, accessed on November 17, 2025, https://curity.io/resources/learn/jwt-best-practices/
+	•	OAuth 2.0 Resource Server JWT :: Spring Security, accessed on November 17, 2025, https://docs.spring.io/spring-security/reference/servlet/oauth2/resource-server/jwt.html
+	•	Migrate from API keys to MCP OAuth 2.1: Secure M2M Authentication for AI Agents - Scalekit, accessed on November 17, 2025, https://www.scalekit.com/blog/migrating-from-api-keys-to-oauth-mcp-servers
+	•	Roles and permissions - Scalekit Docs, accessed on November 17, 2025, https://docs.scalekit.com/fsa/guides/app-roles/
+	•	Just in Time Provisioning vs Just in Time Privilege | One Identity, accessed on November 17, 2025, https://www.oneidentity.com/what-is-just-in-time-provisioning/
+	•	42 OAuth Just-In-Time (JIT) User Provisioning - Oracle Help Center, accessed on November 17, 2025, https://docs.oracle.com/en/middleware/idm/access-manager/12.2.1.4/aiaag/just-time-user-provisioning.html
+	•	Just-in-Time Provisioning for SAML - Salesforce Help, accessed on November 17, 2025, https://help.salesforce.com/s/articleView?id=xcloud.sso_jit_about.htm&language=en_US&type=5
+	•	User Provisioning in Spring saml 2.0 - java - Stack Overflow, accessed on November 17, 2025, https://stackoverflow.com/questions/51103446/user-provisioning-in-spring-saml-2-0
+	•	Authentication flows: Just-in-Time (JIT) Provisioning during SAML SSO - Clerk, accessed on November 17, 2025, https://clerk.com/docs/guides/configure/auth-strategies/enterprise-connections/jit-provisioning
+	•	Google Workspace SSO and automated user provisioning - madewithlove, accessed on November 17, 2025, https://madewithlove.com/blog/google-workspace-sso-and-automated-user-provisioning/
+	•	Understanding Directory Sync Protocols: The Role of Webhooks in Real-Time Synchronization - Scalekit, accessed on November 17, 2025, https://www.scalekit.com/blog/webhooks-in-the-context-of-directory-synchronization
+	•	Effortless SCIM User Provisioning with Scalekit | Automate Identity Management, accessed on November 17, 2025, https://www.scalekit.com/scim/user-provisioning
+	•	Extensible Auth Workflows | Real-Time Auth Events & Interceptors - Scalekit, accessed on November 17, 2025, https://www.scalekit.com/workflows
+	•	A simple app illustrating Scalekit's webhook functionality, receiving event-driven data from directory providers - GitHub, accessed on November 17, 2025, https://github.com/scalekit-inc/webhook-events-nextjs
+	•	Directory events - Scalekit Docs, accessed on November 17, 2025, https://docs.scalekit.com/reference/webhooks/directory-events/
+	•	Intercept authentication flows - Scalekit Docs, accessed on November 17, 2025, https://docs.scalekit.com/guides/auth-flow-interceptors/
+	•	Getting started with SCIM - Scalekit Docs, accessed on November 17, 2025, https://docs.scalekit.com/directory/scim/quickstart/
+	•	Webhooks UI: Streamlined Event Management - Scalekit, accessed on November 17, 2025, https://www.scalekit.com/product-updates/webhooks-ui-enhancements-streamlined-event-management
+	•	HTTP Signature Verification in Spring Boot WebHooks - Medium, accessed on November 17, 2025, https://medium.com/@AlexanderObregon/http-signature-verification-in-spring-boot-webhooks-634be55a2da3
+	•	How to generate a signature by hashing the webhook request body? - Stack Overflow, accessed on November 17, 2025, https://stackoverflow.com/questions/65519754/how-to-generate-a-signature-by-hashing-the-webhook-request-body
+	•	Streamline Directory Integrations with Scalekit's SCIM Solution, accessed on November 17, 2025, https://www.scalekit.com/scim/directory-integrations
+	•	SCIM vs JIT: key differences explained - WorkOS, accessed on November 17, 2025, https://workos.com/blog/scim-vs-jit-what-s-the-difference
+	•	Enable automatic user provisioning for your multitenant application in Microsoft Entra ID, accessed on November 17, 2025, https://learn.microsoft.com/en-us/entra/identity/app-provisioning/isv-automatic-provisioning-multi-tenant-apps
+	•	How to Use Circuit Breaker Resilience in Your API Integration - Avenue Code Snippets, accessed on November 17, 2025, https://blog.avenuecode.com/how-to-use-circuit-breaker-resilience-in-your-api-integration
+	•	Spring Cloud Circuit Breaker, accessed on November 17, 2025, https://spring.io/projects/spring-cloud-circuitbreaker/
+	•	Guide to Resilience4j With Spring Boot | Baeldung, accessed on November 17, 2025, https://www.baeldung.com/spring-boot-resilience4j
+	•	Spring boot Rest API using Circuit Breaker | by Uma Charan Gorai | Medium, accessed on November 17, 2025, https://medium.com/@ucgorai/spring-boot-rest-api-using-circuit-breaker-401aa067cbe8
+	•	Spring Boot 3 | Circuit Breakers using Resilience4J | Microservices Resiliency Primer, accessed on November 17, 2025, https://www.youtube.com/watch?v=3-ChrD3Zosg
+	•	Getting Started - resilience4j, accessed on November 17, 2025, https://resilience4j.readme.io/docs/getting-started-3
+	•	Spring boot resilience4j circuit breaker fallback method not being called - Stack Overflow, accessed on November 17, 2025, https://stackoverflow.com/questions/76940489/spring-boot-resilience4j-circuit-breaker-fallback-method-not-being-called
+	•	How to Adopt Resiliency Patterns with Spring Boot (Circuit Breaker, Retries, etc.) - Medium, accessed on November 17, 2025, https://medium.com/@AlexanderObregon/how-to-adopt-resiliency-patterns-with-spring-boot-circuit-breaker-retries-etc-1b65e63df586
+	•	Caching :: Spring Boot, accessed on November 17, 2025, https://docs.spring.io/spring-boot/reference/io/caching.html
+	•	Spring Boot Caching: A Comprehensive Guide to Improve Application Performance | by Tharindu Dulshan | Medium, accessed on November 17, 2025, https://medium.com/@tharindudulshanfdo/spring-boot-caching-a-comprehensive-guide-to-improve-application-performance-3aa06f4d28f9
+	•	Caching API Requests in Spring Boot: A Comprehensive Guide - Scalable Human Blog, accessed on November 17, 2025, https://scalablehuman.com/2023/09/21/caching-api-requests-in-spring-boot-a-comprehensive-guide/
+	•	How can i cache the data in Spring api rest - Stack Overflow, accessed on November 17, 2025, https://stackoverflow.com/questions/63015478/how-can-i-cache-the-data-in-spring-api-rest
+	•	If you shouldn't store and API key directly in code, where should you store it? - Reddit, accessed on November 17, 2025, https://www.reddit.com/r/learnprogramming/comments/bcdml9/if_you_shouldnt_store_and_api_key_directly_in/
+	•	Storing Sensitive Data in a Spring Boot Application - Security - Vaadin, accessed on November 17, 2025, https://vaadin.com/docs/latest/flow/security/advanced-topics/external-configuration
+	•	Best Practices for API Key Safety | OpenAI Help Center, accessed on November 17, 2025, https://help.openai.com/en/articles/5112595-best-practices-for-api-key-safety
+	•	In java spring, how to best "change secret in production"? - Stack Overflow, accessed on November 17, 2025, https://stackoverflow.com/questions/72147713/in-java-spring-how-to-best-change-secret-in-production
+	•	Managing Secrets with Vault - Spring, accessed on November 17, 2025, https://spring.io/blog/2016/06/24/managing-secrets-with-vault/
+	•	How to store secrets of a Spring Boot application in HashiCorp Vault securely?, accessed on November 17, 2025, https://stackoverflow.com/questions/60723956/how-to-store-secrets-of-a-spring-boot-application-in-hashicorp-vault-securely
+	•	How to safely inject and handle secrets (Java, Spring Boot) : r/javahelp - Reddit, accessed on November 17, 2025, https://www.reddit.com/r/javahelp/comments/1d00iry/how_to_safely_inject_and_handle_secrets_java/
+	•	How to Secure Secret Data in Spring Boot Using HashiCorp Vault | by Afdul Rohmat, accessed on November 17, 2025, https://medium.com/@afdulrohmat03/how-to-secure-secret-data-in-spring-boot-using-hashicorp-vault-e1b37c269a15
+	•	Spring Vault, accessed on November 17, 2025, https://spring.io/projects/spring-vault/
+	•	Spring Boot 3 + Security + DataSource Keys and API Keys | AWS Secrets Manager | Rest API Example - YouTube, accessed on November 17, 2025, https://www.youtube.com/watch?v=LrFR4CL7DJ4
+	•	Load a secret from Azure Key Vault in a Spring Boot application - Microsoft Learn, accessed on November 17, 2025, https://learn.microsoft.com/en-us/azure/developer/java/spring-framework/configure-spring-boot-starter-java-app-with-azure-key-vault
+	•	Protecting Single Page Apps with Token Handler Pattern | Curity, accessed on November 17, 2025, https://curity.io/resources/learn/the-token-handler-pattern/
+	•	The Modular API Handler Pattern: Simplifying Frontend Service Calls | by Ishu Bansal, accessed on November 17, 2025, https://medium.com/@ishubansal1400/the-modular-api-handler-pattern-scalable-frontend-service-calls-79dee191c273
+	•	Navigating the Fine Line of Microservices: When a pattern is an anti-pattern, accessed on November 17, 2025, https://www.radicalgeek.co.uk/navigating-the-fine-line-of-microservices-when-a-pattern-is-an-anti-pattern/
+	•	Key Authentication Security Patterns In Microservice Architecture - Talentica Software, accessed on November 17, 2025, https://www.talentica.com/blogs/key-authentication-security-patterns-in-microservice-architecture/
+	•	Lovable AI Security: Spot the Risk | Don't Embed API Keys in Client-Side JavaScript, accessed on November 17, 2025, https://www.youtube.com/watch?v=kLqet4TMOdc
+	•	Is my API key in my code embed safe ? : r/webflow - Reddit, accessed on November 17, 2025, https://www.reddit.com/r/webflow/comments/1lm2dn1/is_my_api_key_in_my_code_embed_safe/
+	•	API key embedded in clients: how to defend against over-usage?, accessed on November 17, 2025, https://security.stackexchange.com/questions/273302/api-key-embedded-in-clients-how-to-defend-against-over-usage
